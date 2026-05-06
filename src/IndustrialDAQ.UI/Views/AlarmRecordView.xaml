@@ -88,8 +88,7 @@
                     <ComboBox Width="100" Height="28"
                               VerticalContentAlignment="Center"
                               ItemsSource="{x:Static views:AlarmRecordView.SeverityFilterList}"
-                              SelectedItem="{Binding FilterSeverity}"
-                              Foreground="{DynamicResource MainBgBrush}"/>
+                              SelectedItem="{Binding FilterSeverity}"/>
                 </StackPanel>
 
                 <!-- 状态筛选 -->
@@ -101,15 +100,12 @@
                     <ComboBox Width="100" Height="28"
                               VerticalContentAlignment="Center"
                               ItemsSource="{x:Static views:AlarmRecordView.StatusFilterList}"
-                              SelectedItem="{Binding FilterStatus}"
-                              Foreground="{DynamicResource MainBgBrush}"/>
+                              SelectedItem="{Binding FilterStatus}"/>
                 </StackPanel>
 
                 <!-- 搜索框 -->
                 <TextBox Grid.Column="2" Height="28"
                          Margin="0,0,16,0" VerticalAlignment="Center"
-                         VerticalContentAlignment="Center"
-                         Foreground="{DynamicResource MainBgBrush}"
                          CaretBrush="{DynamicResource TextPrimaryBrush}">
                     <TextBox.Resources>
                         <Style TargetType="Border">

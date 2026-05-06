@@ -95,19 +95,29 @@ public class SystemSettingsViewModel : BindableBase
         var app = Application.Current;
         if (app == null) return;
 
-        var resources = app.Resources.MergedDictionaries;
-        // 找到现有的主题字典
-        var existingTheme = resources.FirstOrDefault(d => d.Source != null && d.Source.OriginalString.Contains("Theme.xaml"));
-        if (existingTheme != null)
+        try
         {
-            resources.Remove(existingTheme);
-        }
+            var resources = app.Resources.MergedDictionaries;
+            
+            // 找到并移除现有的主题字典
+            var existingTheme = resources.FirstOrDefault(d => d.Source != null && d.Source.ToString().Contains("Theme.xaml"));
+            if (existingTheme != null)
+            {
+                resources.Remove(existingTheme);
+            }
 
-        // 添加新主题
-        resources.Add(new ResourceDictionary
+            // 使用与 App.xaml 一致的相对路径添加新主题
+            resources.Add(new ResourceDictionary
+            {
+                Source = new Uri($"Themes/{themeName}.xaml", UriKind.Relative)
+            });
+            
+            StatusMessage = $"✓ 主题已切换至 {themeName}";
+        }
+        catch (Exception ex)
         {
-            Source = new Uri($"pack://application:,,,/IndustrialDAQ.UI;component/Themes/{themeName}.xaml")
-        });
+            StatusMessage = $"✗ 主题切换失败: {ex.Message}";
+        }
     }
 }
 

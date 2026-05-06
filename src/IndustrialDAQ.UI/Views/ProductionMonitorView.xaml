@@ -8,7 +8,7 @@
              xmlns:converters="clr-namespace:IndustrialDAQ.UI.Converters"
              xmlns:models="clr-namespace:IndustrialDAQ.UI.Models"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="{StaticResource BrushBgPrimary}">
+             Background="{DynamicResource BrushBgPrimary}">
 
     <UserControl.Resources>
         <converters:TreeArrowConverter x:Key="TreeArrowConverter"/>
@@ -45,8 +45,8 @@
         </Grid.RowDefinitions>
 
         <!-- ═══════════ 设备选择栏 ═══════════ -->
-        <Border Grid.Row="0" Background="{StaticResource PanelBgBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+        <Border Grid.Row="0" Background="{DynamicResource PanelBgBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1" CornerRadius="4"
                 Padding="10,8" Margin="0,0,0,8">
             <Grid>
@@ -56,7 +56,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="选择设备:" FontSize="14" FontWeight="SemiBold"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <ComboBox Grid.Column="1"
                           ItemsSource="{Binding Devices}"
@@ -64,9 +64,6 @@
                           DisplayMemberPath="Name"
                           IsSynchronizedWithCurrentItem="True"
                           VerticalContentAlignment="Center"
-                          Background="{StaticResource BrushBgTertiary}"
-                          Foreground="{StaticResource MainBgBrush}"
-                          BorderBrush="{StaticResource BorderSecondaryBrush}"
                           Height="28"/>
             </Grid>
         </Border>
@@ -77,12 +74,12 @@
                 Padding="10,6" Margin="0,0,0,8">
             <Border.Style>
                 <Style TargetType="Border">
-                    <Setter Property="Background" Value="{StaticResource SuccessBgBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource SuccessBgBrush}"/>
                     <Setter Property="BorderBrush" Value="#065F46"/>
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding HasAlarm}" Value="True">
-                            <Setter Property="Background" Value="{StaticResource DangerBgBrush}"/>
-                            <Setter Property="BorderBrush" Value="{StaticResource DangerBorderBrush}"/>
+                            <Setter Property="Background" Value="{DynamicResource DangerBgBrush}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
@@ -105,7 +102,7 @@
                     </TextBlock.Style>
                 </TextBlock>
                 <TextBlock Grid.Column="1" Text="{Binding AlarmText}"
-                           FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -122,9 +119,9 @@
                           Margin="0,0,6,0">
                 <StackPanel>
                     <!-- 数字仪表 2x3 网格 -->
-                    <Border Style="{StaticResource PanelBorderStyle}">
+                    <Border Style="{DynamicResource PanelBorderStyle}">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource PanelTitleStyle}"
+                            <TextBlock Style="{DynamicResource PanelTitleStyle}"
                                        Text="实时仪表"/>
                             <ItemsControl ItemsSource="{Binding Gauges}">
                                 <ItemsControl.ItemsPanel>
@@ -157,13 +154,13 @@
                 </Grid.RowDefinitions>
 
                 <!-- 实时趋势图 -->
-                <Border Grid.Row="0" Style="{StaticResource PanelBorderStyle}">
+                <Border Grid.Row="0" Style="{DynamicResource PanelBorderStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Style="{StaticResource PanelTitleStyle}"
+                        <TextBlock Style="{DynamicResource PanelTitleStyle}"
                                    Text="实时趋势图 (X=时间)"/>
                         <lvc:CartesianChart Grid.Row="1"
                                             Series="{Binding TrendSeries}"
@@ -179,13 +176,13 @@
                 </Border>
 
                 <!-- 实时数据表 -->
-                <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}">
+                <Border Grid.Row="2" Style="{DynamicResource PanelBorderStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Style="{StaticResource PanelTitleStyle}"
+                        <TextBlock Style="{DynamicResource PanelTitleStyle}"
                                    Text="实时数据表"/>
                         <DataGrid Grid.Row="1"
                                   ItemsSource="{Binding TagTable}"
@@ -194,7 +191,7 @@
                                   HeadersVisibility="Column"
                                   GridLinesVisibility="Horizontal"
                                   SelectionMode="Single"
-                                  RowStyle="{StaticResource DataGridRowQualityStyle}">
+                                  RowStyle="{DynamicResource DataGridRowQualityStyle}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="测点名称" Binding="{Binding TagName}"
                                                     Width="180"/>
@@ -209,8 +206,8 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <CheckBox Content="趋势" IsChecked="{Binding IsTrendSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                <CheckBox Content="仪表" IsChecked="{Binding IsGaugeSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <CheckBox Content="趋势" IsChecked="{Binding IsTrendSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                <CheckBox Content="仪表" IsChecked="{Binding IsGaugeSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -222,7 +219,7 @@
                                             <StackPanel Orientation="Horizontal" Visibility="{Binding CanWrite, Converter={StaticResource BooleanToVisibilityConverter}}" HorizontalAlignment="Center">
                                                 <Button Content="写入" Command="{Binding DataContext.WriteTagCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" 
                                                         CommandParameter="{Binding}" VerticalAlignment="Center"
-                                                        Style="{StaticResource DataGridActionButtonStyle}"/>
+                                                        Style="{DynamicResource DataGridActionButtonStyle}"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>

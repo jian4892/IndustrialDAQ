@@ -2,7 +2,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- ═══════════ 基础色板 ═══════════ -->
+    <!-- 1. Colors -->
     <Color x:Key="ColorBgPrimary">#0A0A0A</Color>
     <Color x:Key="ColorBgSecondary">#141414</Color>
     <Color x:Key="ColorBgTertiary">#1F1F1F</Color>
@@ -14,7 +14,6 @@
     <Color x:Key="ColorTextMuted">#A3A3A3</Color>
     <Color x:Key="ColorTextDim">#7A7A7A</Color>
 
-    <!-- ═══════════ 语义色 ═══════════ -->
     <Color x:Key="ColorSuccess">#00E676</Color>
     <Color x:Key="ColorSuccessBg">#00331A</Color>
     <Color x:Key="ColorWarning">#FFEA00</Color>
@@ -27,19 +26,17 @@
     <Color x:Key="ColorDisconnected">#757575</Color>
     <Color x:Key="ColorAccent">#FF9100</Color>
 
-    <!-- ═══════════ 基础画刷 ═══════════ -->
+    <!-- 2. Brushes -->
     <SolidColorBrush x:Key="MainBgBrush" Color="{StaticResource ColorBgPrimary}"/>
     <SolidColorBrush x:Key="PanelBgBrush" Color="{StaticResource ColorBgSecondary}"/>
     <SolidColorBrush x:Key="CardBgBrush" Color="{StaticResource ColorBgCard}"/>
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource ColorBorderPrimary}"/>
     <SolidColorBrush x:Key="BorderSecondaryBrush" Color="{StaticResource ColorBorderSecondary}"/>
-
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource ColorTextPrimary}"/>
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource ColorTextSecondary}"/>
     <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource ColorTextMuted}"/>
     <SolidColorBrush x:Key="TextDimBrush" Color="{StaticResource ColorTextDim}"/>
 
-    <!-- ═══════════ 语义画刷 ═══════════ -->
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource ColorSuccess}"/>
     <SolidColorBrush x:Key="SuccessBgBrush" Color="{StaticResource ColorSuccessBg}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource ColorWarning}"/>
@@ -52,7 +49,13 @@
     <SolidColorBrush x:Key="DisconnectedBrush" Color="{StaticResource ColorDisconnected}"/>
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource ColorAccent}"/>
 
-    <!-- ═══════════ 向后兼容别名（旧命名） ═══════════ -->
+    <SolidColorBrush x:Key="ComboBoxBgBrush" Color="{StaticResource ColorBgTertiary}" />
+    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="{StaticResource ColorBorderPrimary}" />
+    <SolidColorBrush x:Key="ComboBoxTextBrush" Color="{StaticResource ColorTextPrimary}" />
+    <SolidColorBrush x:Key="ComboBoxDropDownBgBrush" Color="{StaticResource ColorBgSecondary}" />
+    <SolidColorBrush x:Key="ComboBoxHoverBgBrush" Color="{StaticResource ColorBgPrimary}" />
+
+    <!-- Legacy Names -->
     <SolidColorBrush x:Key="BrushBgPrimary" Color="{StaticResource ColorBgPrimary}"/>
     <SolidColorBrush x:Key="BrushBgSecondary" Color="{StaticResource ColorBgSecondary}"/>
     <SolidColorBrush x:Key="BrushBgTertiary" Color="{StaticResource ColorBgTertiary}"/>
@@ -74,7 +77,7 @@
     <SolidColorBrush x:Key="BrushInfoBg" Color="{StaticResource ColorInfoBg}"/>
     <SolidColorBrush x:Key="BrushDisconnected" Color="{StaticResource ColorDisconnected}"/>
 
-    <!-- ═══════════ 共用区块样式 ═══════════ -->
+    <!-- 3. Styles -->
     <Style x:Key="PanelBorderStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource PanelBgBrush}"/>
         <Setter Property="CornerRadius" Value="6"/>
@@ -107,7 +110,6 @@
         <Setter Property="Margin" Value="0,8,0,4"/>
     </Style>
 
-    <!-- ═══════════ 报警栏样式 ═══════════ -->
     <Style x:Key="AlarmBarStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource DangerBgBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}"/>
@@ -116,7 +118,6 @@
         <Setter Property="Padding" Value="10,6"/>
     </Style>
 
-    <!-- ═══════════ TreeView 暗黑风格 ═══════════ -->
     <Style TargetType="TreeView">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
@@ -141,23 +142,13 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <!-- 展开/折叠箭头 -->
                                 <ToggleButton x:Name="Expander" Grid.Column="0"
                                               IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
                                               ClickMode="Press" Width="16" Height="16"
                                               Margin="0,0,4,0"
                                               Background="Transparent" BorderThickness="0"
                                               Foreground="{DynamicResource BrushTextMuted}">
-                                    <!-- <ToggleButton.Template>
-                                        <ControlTemplate TargetType="ToggleButton">
-                                            <TextBlock Text="{Binding IsChecked, RelativeSource={RelativeSource Self},
-                                                Converter={StaticResource TreeArrowConverter}}"
-                                                       FontSize="10" Foreground="{StaticResource BrushTextMuted}"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </ControlTemplate>
-                                    </ToggleButton.Template> -->
                                 </ToggleButton> 
-                                <!-- 项内容 -->
                                 <ContentPresenter x:Name="PART_Header" Grid.Column="1"
                                                   ContentSource="Header"
                                                   VerticalAlignment="Center"/>
@@ -181,7 +172,6 @@
         </Setter>
     </Style>
 
-    <!-- ═══════════ DataGrid 暗黑风格 ═══════════ -->
     <Style TargetType="DataGrid">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="RowBackground" Value="Transparent"/>
@@ -225,12 +215,10 @@
         </Style.Triggers>
     </Style>
 
-    <!-- ═══════════ ScrollBar 暗黑 ═══════════ -->
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="{DynamicResource BrushBgTertiary}"/>
     </Style>
 
-    <!-- ═══════════ Button 暗黑风格 ═══════════ -->
     <Style x:Key="DarkButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource InfoBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
@@ -260,4 +248,76 @@
         </Style.Triggers>
     </Style>
 
+    <Style TargetType="ComboBox">
+        <Setter Property="Background" Value="{DynamicResource ComboBoxBgBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ComboBoxTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="ToggleButton" 
+                                      Background="{TemplateBinding Background}"
+                                      BorderBrush="{TemplateBinding BorderBrush}"
+                                      BorderThickness="{TemplateBinding BorderThickness}"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      ClickMode="Press">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="templateRoot" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                                        <Grid HorizontalAlignment="Right" Width="30">
+                                            <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource ComboBoxTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,1,0,0"/>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="templateRoot" Property="Background" Value="{DynamicResource ComboBoxHoverBgBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter x:Name="contentPresenter" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" Margin="{TemplateBinding Padding}" IsHitTestVisible="false" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        <Popup x:Name="PART_Popup" AllowsTransparency="true" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}" Margin="1" Placement="Bottom">
+                            <Border x:Name="dropDownBorder" Background="{DynamicResource ComboBoxDropDownBgBrush}" BorderBrush="{DynamicResource ComboBoxBorderBrush}" BorderThickness="1" MaxHeight="{TemplateBinding MaxDropDownHeight}" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" CornerRadius="4">
+                                <ScrollViewer x:Name="DropDownScrollViewer">
+                                    <Grid x:Name="grid" RenderOptions.ClearTypeHint="Enabled">
+                                        <ItemsPresenter x:Name="ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Contained" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                    </Grid>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource ComboBoxTextBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderThickness="0" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="true">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ComboBoxHoverBgBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource InfoBgBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource InfoBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

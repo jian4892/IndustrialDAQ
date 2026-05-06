@@ -6,7 +6,7 @@
              xmlns:models="clr-namespace:IndustrialDAQ.UI.Models"
              xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="{StaticResource MainBgBrush}">
+             Background="{DynamicResource MainBgBrush}">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -26,27 +26,27 @@
             <!-- 左侧标题 -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="🏭" FontSize="26" Margin="0,0,12,0"/>
-                <TextBlock Text="智能产线监控" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="智能产线监控" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
             </StackPanel>
 
             <!-- 右侧状态栏 -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="System Status:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13"/>
-                <Ellipse Width="10" Height="10" Fill="{StaticResource SuccessBrush}" Margin="8,0,6,0" VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding SystemStatus}" Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
+                <TextBlock Text="System Status:" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13"/>
+                <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}" Margin="8,0,6,0" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding SystemStatus}" Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
 
-                <TextBlock Text="User:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
-                <TextBlock Text="👤" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <TextBlock Text="{Binding CurrentUser}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
+                <TextBlock Text="User:" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
+                <TextBlock Text="👤" Foreground="{DynamicResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Text="{Binding CurrentUser}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
 
-                <TextBlock Text="Time:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
-                <TextBlock Text="📅" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <TextBlock Text="{Binding CurrentTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13" Width="140"/>
+                <TextBlock Text="Time:" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
+                <TextBlock Text="📅" Foreground="{DynamicResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Text="{Binding CurrentTime}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13" Width="140"/>
 
-                <Border Background="{StaticResource DangerBgBrush}" BorderBrush="{StaticResource DangerBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,4">
+                <Border Background="{DynamicResource DangerBgBrush}" BorderBrush="{DynamicResource DangerBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,4">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="🔔" Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding AlarmCount}" Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="🔔" Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding AlarmCount}" Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" FontWeight="Bold"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -61,52 +61,52 @@
             </Grid.ColumnDefinitions>
 
             <!-- 卡片 1: 总产量 -->
-            <Border Grid.Column="0" Margin="0,0,12,0" Background="{StaticResource CardBgBrush}" 
-                    BorderBrush="{StaticResource InfoBrush}" BorderThickness="1" CornerRadius="6">
+            <Border Grid.Column="0" Margin="0,0,12,0" Background="{DynamicResource CardBgBrush}" 
+                    BorderBrush="{DynamicResource InfoBrush}" BorderThickness="1" CornerRadius="6">
                 <StackPanel Orientation="Horizontal" Margin="20">
                     <Border Background="#1A3B82F6" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
                         <TextBlock Text="🏆" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock Text="总产量：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding TotalYield, StringFormat='{}{0:#,0}'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
-                    <TextBlock Text=" (瓶)" Foreground="{StaticResource TextMutedBrush}" FontSize="16" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    <TextBlock Text="总产量：" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalYield, StringFormat='{}{0:#,0}'}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text=" (瓶)" Foreground="{DynamicResource TextMutedBrush}" FontSize="16" VerticalAlignment="Center" Margin="6,0,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- 卡片 2: 良品率 -->
-            <Border Grid.Column="1" Margin="12,0,12,0" Background="{StaticResource CardBgBrush}" 
-                    BorderBrush="{StaticResource SuccessBrush}" BorderThickness="1" CornerRadius="6">
+            <Border Grid.Column="1" Margin="12,0,12,0" Background="{DynamicResource CardBgBrush}" 
+                    BorderBrush="{DynamicResource SuccessBrush}" BorderThickness="1" CornerRadius="6">
                 <StackPanel Orientation="Horizontal" Margin="20">
                     <Border Background="#1A10B981" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
                         <TextBlock Text="✅" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock Text="良品率：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding YieldRate, StringFormat='{}{0:F1}%'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="良品率：" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding YieldRate, StringFormat='{}{0:F1}%'}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
                 </StackPanel>
             </Border>
 
             <!-- 卡片 3: 能耗 -->
-            <Border Grid.Column="2" Margin="12,0,0,0" Background="{StaticResource CardBgBrush}" 
-                    BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6">
+            <Border Grid.Column="2" Margin="12,0,0,0" Background="{DynamicResource CardBgBrush}" 
+                    BorderBrush="{DynamicResource WarningBrush}" BorderThickness="1" CornerRadius="6">
                 <StackPanel Orientation="Horizontal" Margin="20">
                     <Border Background="#1AF59E0B" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
                         <TextBlock Text="⚡" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock Text="能耗 (kWh)：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding EnergyConsumption, StringFormat='{}{0:F1}'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="能耗 (kWh)：" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding EnergyConsumption, StringFormat='{}{0:F1}'}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
                 </StackPanel>
             </Border>
         </Grid>
 
         <!-- ═══ 单产线生产流程 ═══ -->
-        <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}" Margin="0,0,0,16">
+        <Border Grid.Row="2" Style="{DynamicResource PanelBorderStyle}" Margin="0,0,0,16">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <TextBlock Text="单产线生产流程" Style="{StaticResource PanelTitleStyle}" Margin="16,16,16,8"/>
+                <TextBlock Text="单产线生产流程" Style="{DynamicResource PanelTitleStyle}" Margin="16,16,16,8"/>
 
                 <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="16,0,16,16">
                     <ItemsControl ItemsSource="{Binding Stations}" VerticalAlignment="Center">
@@ -121,12 +121,12 @@
                                     
                                     <!-- 工位卡片 -->
                                     <Border Width="190" Height="260" Padding="16" Margin="0,8"
-                                            Background="{StaticResource CardBgBrush}"
+                                            Background="{DynamicResource CardBgBrush}"
                                             BorderThickness="2" CornerRadius="8">
                                         <!-- 使用绑定改变边框颜色 -->
                                         <Border.Style>
                                             <Style TargetType="Border">
-                                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
                                             </Style>
                                         </Border.Style>
                                         <Border.BorderBrush>
@@ -151,25 +151,25 @@
                                             <!-- 名称 -->
                                             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,16">
                                                 <Ellipse Width="10" Height="10" Fill="{Binding StatusColor}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             </StackPanel>
 
                                             <!-- 状态行 -->
                                             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4">
-                                                <TextBlock Text="状态：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="状态：" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="14"/>
                                                 <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusColor}" FontSize="14"/>
                                             </StackPanel>
 
                                             <!-- 主统计 -->
                                             <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4">
-                                                <TextBlock Text="{Binding PrimaryStatName, StringFormat='{}{0}：'}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
-                                                <TextBlock Text="{Binding PrimaryStatValue}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding PrimaryStatName, StringFormat='{}{0}：'}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding PrimaryStatValue}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"/>
                                             </StackPanel>
 
                                             <!-- PLC计数 -->
                                             <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,4">
-                                                <TextBlock Text="PLC：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
-                                                <TextBlock Text="{Binding PlcCount, StringFormat='{}{0}台'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="PLC：" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding PlcCount, StringFormat='{}{0}台'}" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"/>
                                             </StackPanel>
 
                                             <!-- 迷你图表 -->
@@ -191,7 +191,7 @@
                                     </Border>
 
                                     <!-- 连接箭头 (使用 Binding IsLast 隐藏最后一个箭头) -->
-                                    <Path Data="M0,0 L24,0 M18,-6 L24,0 L18,6" Stroke="{StaticResource TextMutedBrush}" StrokeThickness="2" VerticalAlignment="Center" Margin="12,0">
+                                    <Path Data="M0,0 L24,0 M18,-6 L24,0 L18,6" Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="2" VerticalAlignment="Center" Margin="12,0">
                                         <Path.Style>
                                             <Style TargetType="Path">
                                                 <Setter Property="Visibility" Value="Visible"/>

@@ -4,7 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="{StaticResource MainBgBrush}">
+             Background="{DynamicResource MainBgBrush}">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -39,7 +39,7 @@
         </Grid.RowDefinitions>
 
         <!-- 设备信息摘要卡片 -->
-        <Border Grid.Row="0" Style="{StaticResource PanelBorderStyle}" Margin="0,0,0,8">
+        <Border Grid.Row="0" Style="{DynamicResource PanelBorderStyle}" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -49,10 +49,10 @@
 
                 <!-- 设备图标和名称 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🖥" FontSize="28" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource InfoBrush}"/>
+                    <TextBlock Text="🖥" FontSize="28" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{DynamicResource InfoBrush}"/>
                     <StackPanel>
                         <TextBlock Text="{Binding DeviceName}" FontSize="18" FontWeight="Bold"
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center">
                                 <Ellipse.Style>
@@ -62,7 +62,7 @@
                                 </Ellipse.Style>
                             </Ellipse>
                             <TextBlock Text="{Binding DeviceStatus}" FontSize="12"
-                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>
@@ -77,34 +77,34 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Margin="0,0,24,0">
                         <TextBlock Text="IP 地址" FontSize="11"
-                                   Foreground="{StaticResource TextDimBrush}"/>
+                                   Foreground="{DynamicResource TextDimBrush}"/>
                         <TextBlock Text="{Binding IpAddress}" FontSize="13"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    FontFamily="Consolas" Margin="0,2,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="0,0,24,0">
                         <TextBlock Text="协议" FontSize="11"
-                                   Foreground="{StaticResource TextDimBrush}"/>
+                                   Foreground="{DynamicResource TextDimBrush}"/>
                         <TextBlock Text="{Binding Protocol}" FontSize="13"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Margin="0,0,24,0">
                         <TextBlock Text="采集周期" FontSize="11"
-                                   Foreground="{StaticResource TextDimBrush}"/>
+                                   Foreground="{DynamicResource TextDimBrush}"/>
                         <TextBlock Text="{Binding CycleTime}" FontSize="13"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="3">
                         <TextBlock Text="最后错误" FontSize="11"
-                                   Foreground="{StaticResource TextDimBrush}"/>
+                                   Foreground="{DynamicResource TextDimBrush}"/>
                         <TextBlock Text="{Binding LastError}" FontSize="13"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Grid>
 
                 <!-- 刷新按钮 -->
                 <Button Grid.Column="2" Content="🔄 刷新" Width="80" Height="30"
-                        Background="{StaticResource InfoBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                        Background="{DynamicResource InfoBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
                         BorderThickness="0" VerticalAlignment="Center">
                     <Button.Resources>
                         <Style TargetType="Border">
@@ -116,7 +116,7 @@
         </Border>
 
         <!-- 测点数据表 -->
-        <Border Grid.Row="1" Style="{StaticResource PanelBorderStyle}">
+        <Border Grid.Row="1" Style="{DynamicResource PanelBorderStyle}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -124,16 +124,16 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                    <TextBlock Style="{StaticResource PanelTitleStyle}" Text="实时测点数据"
+                    <TextBlock Style="{DynamicResource PanelTitleStyle}" Text="实时测点数据"
                                Margin="0,0,0,0"/>
                     <TextBlock Text="{Binding Tags.Count, StringFormat='(共 {0} 个测点)'}"
-                               FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                               FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </StackPanel>
 
                 <DataGrid Grid.Row="1" ItemsSource="{Binding Tags}"
                           AutoGenerateColumns="False" IsReadOnly="True"
-                          RowStyle="{StaticResource DataGridRowQualityStyle}"
+                          RowStyle="{DynamicResource DataGridRowQualityStyle}"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           SelectionMode="Single" RowHeight="36" FontSize="13">
                     <DataGrid.Columns>

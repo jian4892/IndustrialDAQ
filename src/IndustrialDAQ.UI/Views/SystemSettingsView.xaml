@@ -4,7 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="{StaticResource MainBgBrush}">
+             Background="{DynamicResource MainBgBrush}">
 
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
@@ -75,10 +75,7 @@
                                                VerticalAlignment="Center" Margin="0,4"/>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableThemes}"
                                               SelectedItem="{Binding SelectedTheme}"
-                                              Height="28" Margin="0,4" Width="200" HorizontalAlignment="Left"
-                                              Background="{StaticResource PanelBgBrush}"
-                                              Foreground="{StaticResource PanelBgBrush}"
-                                              BorderBrush="{StaticResource BorderBrush}"/>
+                                              Height="28" Margin="0,4" Width="200" HorizontalAlignment="Left"/>
                                 </Grid>
                             </StackPanel>
                         </Border>

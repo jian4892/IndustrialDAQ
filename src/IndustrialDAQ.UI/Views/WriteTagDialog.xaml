@@ -56,18 +56,15 @@
             <!-- 数值输入框 -->
             <TextBox x:Name="ValueTextBox" Grid.Row="2" VerticalAlignment="Top" Padding="6"
                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                     Background="{DynamicResource BrushBgTertiary}" Foreground="{DynamicResource TextPrimaryBrush}"
-                     BorderBrush="{DynamicResource BorderSecondaryBrush}" BorderThickness="1"
                      Visibility="{Binding IsNumericInput, Converter={StaticResource BooleanToVisibilityConverter}}" FontSize="14"/>
                      
             <!-- 布尔选择框 -->
             <ComboBox x:Name="ValueComboBox" Grid.Row="2" VerticalAlignment="Top" Padding="6"
                       ItemsSource="{Binding BooleanOptions}"
                       SelectedItem="{Binding SelectedBooleanOption}"
-                      Background="{DynamicResource BrushBgTertiary}" Foreground="{DynamicResource TextPrimaryBrush}"
-                      BorderBrush="{DynamicResource BorderSecondaryBrush}" BorderThickness="1"
                       Visibility="{Binding IsBooleanInput, Converter={StaticResource BooleanToVisibilityConverter}}" FontSize="14">
             </ComboBox>
+
 
             <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
                 <Button Content="取消" Command="{Binding CancelCommand}"/>

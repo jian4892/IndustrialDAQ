@@ -6,7 +6,7 @@
 
     <Grid>
         <!-- 背景弧（灰色半圆） -->
-        <Path x:Name="BackgroundArc" Stroke="#2D3346" StrokeThickness="12"
+        <Path x:Name="BackgroundArc" Stroke="{DynamicResource BorderBrush}" StrokeThickness="12"
               StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
 
         <!-- 值弧（彩色半圆） -->
@@ -17,17 +17,18 @@
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock x:Name="ValueText" Text="0.0"
                        FontSize="36" FontWeight="Bold"
-                       Foreground="#F3F4F6"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
                        HorizontalAlignment="Center"/>
             <TextBlock x:Name="UnitText" Text="unit"
-                       FontSize="14" Foreground="#9CA3AF"
+                       FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}"
                        HorizontalAlignment="Center" Margin="0,2,0,0"/>
         </StackPanel>
 
         <!-- 标签 -->
         <TextBlock x:Name="LabelText" Text="Gauge"
-                   FontSize="12" Foreground="#9CA3AF"
+                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Bottom" Margin="0,0,0,8"/>
     </Grid>
+
 </UserControl>
