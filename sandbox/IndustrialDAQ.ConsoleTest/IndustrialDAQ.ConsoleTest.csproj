@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IndustrialDAQ.Acquisition\IndustrialDAQ.Acquisition.csproj" />
+    <ProjectReference Include="..\..\src\IndustrialDAQ.Alarm\IndustrialDAQ.Alarm.csproj" />
+    <ProjectReference Include="..\..\src\IndustrialDAQ.Infrastructure\IndustrialDAQ.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\IndustrialDAQ.Processing\IndustrialDAQ.Processing.csproj" />
+    <ProjectReference Include="..\..\src\IndustrialDAQ.Storage\IndustrialDAQ.Storage.csproj" />
+    <ProjectReference Include="..\..\Plugins\Drivers.Modbus\Drivers.Modbus.csproj" />
+    <ProjectReference Include="..\..\Plugins\Drivers.OpcUA\Drivers.OpcUA.csproj" />
+    <ProjectReference Include="..\..\Plugins\Drivers.S7\Drivers.S7.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

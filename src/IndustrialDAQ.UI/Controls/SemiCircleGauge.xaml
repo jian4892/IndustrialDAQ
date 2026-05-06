@@ -1,0 +1,33 @@
+<!-- File: SemiCircleGauge.xaml  Module: UI (Controls)  Author: IndustrialDAQ Team -->
+<UserControl x:Class="IndustrialDAQ.UI.Controls.SemiCircleGauge"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="GaugeRoot">
+
+    <Grid>
+        <!-- 背景弧（灰色半圆） -->
+        <Path x:Name="BackgroundArc" Stroke="#2D3346" StrokeThickness="12"
+              StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+
+        <!-- 值弧（彩色半圆） -->
+        <Path x:Name="ValueArc" Stroke="#3B82F6" StrokeThickness="12"
+              StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+
+        <!-- 中心数值 -->
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock x:Name="ValueText" Text="0.0"
+                       FontSize="36" FontWeight="Bold"
+                       Foreground="#F3F4F6"
+                       HorizontalAlignment="Center"/>
+            <TextBlock x:Name="UnitText" Text="unit"
+                       FontSize="14" Foreground="#9CA3AF"
+                       HorizontalAlignment="Center" Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <!-- 标签 -->
+        <TextBlock x:Name="LabelText" Text="Gauge"
+                   FontSize="12" Foreground="#9CA3AF"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Bottom" Margin="0,0,0,8"/>
+    </Grid>
+</UserControl>

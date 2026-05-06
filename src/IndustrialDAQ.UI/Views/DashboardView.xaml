@@ -1,0 +1,249 @@
+<!-- File: DashboardView.xaml  Module: UI (Views)  Author: IndustrialDAQ Team -->
+<UserControl x:Class="IndustrialDAQ.UI.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:models="clr-namespace:IndustrialDAQ.UI.Models"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             Background="{StaticResource MainBgBrush}">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ 标题栏 ═══ -->
+        <Grid Grid.Row="0" Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧标题 -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="🏭" FontSize="26" Margin="0,0,12,0"/>
+                <TextBlock Text="智能产线监控" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </StackPanel>
+
+            <!-- 右侧状态栏 -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="System Status:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13"/>
+                <Ellipse Width="10" Height="10" Fill="{StaticResource SuccessBrush}" Margin="8,0,6,0" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding SystemStatus}" Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
+
+                <TextBlock Text="User:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
+                <TextBlock Text="👤" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Text="{Binding CurrentUser}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13"/>
+
+                <TextBlock Text="Time:" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" FontSize="13" Margin="0,0,6,0"/>
+                <TextBlock Text="📅" Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Text="{Binding CurrentTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,24,0" FontSize="13" Width="140"/>
+
+                <Border Background="{StaticResource DangerBgBrush}" BorderBrush="{StaticResource DangerBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,4">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🔔" Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding AlarmCount}" Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" FontWeight="Bold"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- ═══ 顶部摘要卡片 ═══ -->
+        <Grid Grid.Row="1" Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 卡片 1: 总产量 -->
+            <Border Grid.Column="0" Margin="0,0,12,0" Background="{StaticResource CardBgBrush}" 
+                    BorderBrush="{StaticResource InfoBrush}" BorderThickness="1" CornerRadius="6">
+                <StackPanel Orientation="Horizontal" Margin="20">
+                    <Border Background="#1A3B82F6" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
+                        <TextBlock Text="🏆" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="总产量：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalYield, StringFormat='{}{0:#,0}'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text=" (瓶)" Foreground="{StaticResource TextMutedBrush}" FontSize="16" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 卡片 2: 良品率 -->
+            <Border Grid.Column="1" Margin="12,0,12,0" Background="{StaticResource CardBgBrush}" 
+                    BorderBrush="{StaticResource SuccessBrush}" BorderThickness="1" CornerRadius="6">
+                <StackPanel Orientation="Horizontal" Margin="20">
+                    <Border Background="#1A10B981" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
+                        <TextBlock Text="✅" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="良品率：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding YieldRate, StringFormat='{}{0:F1}%'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 卡片 3: 能耗 -->
+            <Border Grid.Column="2" Margin="12,0,0,0" Background="{StaticResource CardBgBrush}" 
+                    BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6">
+                <StackPanel Orientation="Horizontal" Margin="20">
+                    <Border Background="#1AF59E0B" CornerRadius="8" Width="48" Height="48" Margin="0,0,16,0">
+                        <TextBlock Text="⚡" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="能耗 (kWh)：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding EnergyConsumption, StringFormat='{}{0:F1}'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ═══ 单产线生产流程 ═══ -->
+        <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}" Margin="0,0,0,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <TextBlock Text="单产线生产流程" Style="{StaticResource PanelTitleStyle}" Margin="16,16,16,8"/>
+
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="16,0,16,16">
+                    <ItemsControl ItemsSource="{Binding Stations}" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:StationModel}">
+                                <StackPanel Orientation="Horizontal">
+                                    
+                                    <!-- 工位卡片 -->
+                                    <Border Width="190" Height="260" Padding="16" Margin="0,8"
+                                            Background="{StaticResource CardBgBrush}"
+                                            BorderThickness="2" CornerRadius="8">
+                                        <!-- 使用绑定改变边框颜色 -->
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{Binding StatusColor}"/>
+                                        </Border.BorderBrush>
+                                        
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- 图标占位 (可根据需要替换为实际图标路径或矢量图) -->
+                                            <Border Grid.Row="0" Height="60" Margin="0,0,0,16">
+                                                <TextBlock Text="⚙" FontSize="48" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding StatusColor}"/>
+                                            </Border>
+
+                                            <!-- 名称 -->
+                                            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                                <Ellipse Width="10" Height="10" Fill="{Binding StatusColor}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+
+                                            <!-- 状态行 -->
+                                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4">
+                                                <TextBlock Text="状态：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusColor}" FontSize="14"/>
+                                            </StackPanel>
+
+                                            <!-- 主统计 -->
+                                            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4">
+                                                <TextBlock Text="{Binding PrimaryStatName, StringFormat='{}{0}：'}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding PrimaryStatValue}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14"/>
+                                            </StackPanel>
+
+                                            <!-- PLC计数 -->
+                                            <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,4">
+                                                <TextBlock Text="PLC：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                                                <TextBlock Text="{Binding PlcCount, StringFormat='{}{0}台'}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14"/>
+                                            </StackPanel>
+
+                                            <!-- 迷你图表 -->
+                                            <lvc:CartesianChart Grid.Row="5" Series="{Binding SparklineSeries}" 
+                                                                XAxes="{Binding SparklineXAxes}" YAxes="{Binding SparklineYAxes}"
+                                                                Height="40" Margin="0,8,0,0">
+                                                <lvc:CartesianChart.Style>
+                                                    <Style TargetType="lvc:CartesianChart">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SparklineSeries.Count}" Value="0">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </lvc:CartesianChart.Style>
+                                            </lvc:CartesianChart>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- 连接箭头 (使用 Binding IsLast 隐藏最后一个箭头) -->
+                                    <Path Data="M0,0 L24,0 M18,-6 L24,0 L18,6" Stroke="{StaticResource TextMutedBrush}" StrokeThickness="2" VerticalAlignment="Center" Margin="12,0">
+                                        <Path.Style>
+                                            <Style TargetType="Path">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Path.Style>
+                                    </Path>
+
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ═══ 实时报警栏 (Real-time Alarm Bar) ═══ -->
+        <Border Grid.Row="3" Background="{StaticResource DangerBgBrush}" 
+                BorderBrush="{StaticResource DangerBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="Real-time Alarm Bar" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
+
+                <!-- 使用简单的水平列表显示报警 -->
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding RealTimeAlarms}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
+                                <!-- 模拟报警颜色点 -->
+                                <Ellipse Width="8" Height="8" Fill="{StaticResource DangerBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="{Binding}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Grid.Column="2" Text="⏬" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Cursor="Hand"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
