@@ -65,6 +65,31 @@
                           IsSynchronizedWithCurrentItem="True"
                           VerticalContentAlignment="Center"
                           Height="28"/>
+
+                <!-- 设备详细信息展示 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
+                    <Border Background="{DynamicResource InfoBgBrush}" Padding="8,3" CornerRadius="4" Margin="0,0,12,0"
+                            BorderBrush="{DynamicResource InfoBrush}" BorderThickness="0.5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="IP: " Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedDevice.IpAddress}" Foreground="{DynamicResource InfoBrush}" FontSize="12" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="{DynamicResource InfoBgBrush}" Padding="8,3" CornerRadius="4" Margin="0,0,12,0"
+                            BorderBrush="{DynamicResource InfoBrush}" BorderThickness="0.5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="端口: " Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedDevice.Port}" Foreground="{DynamicResource InfoBrush}" FontSize="12" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="{DynamicResource InfoBgBrush}" Padding="8,3" CornerRadius="4"
+                            BorderBrush="{DynamicResource InfoBrush}" BorderThickness="0.5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="类型: " Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedDevice.DriverType}" Foreground="{DynamicResource InfoBrush}" FontSize="12" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
         </Border>
 

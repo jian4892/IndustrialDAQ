@@ -47,6 +47,10 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
             if (SetProperty(ref _selectedDevice, value) && value is not null)
             {
                 OnDeviceSelected(value);
+                // 切换设备时立即刷新一次连接状态和报警信息
+                var driver = _acquisitionHost.GetDriver(value.Id);
+                IsDeviceConnected = driver?.IsConnected ?? false;
+                UpdateAlarmStatus(null);
             }
         }
     }
@@ -60,6 +64,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     private string _alarmText = "系统正常，无活跃报警";
     /// <summary>报警栏文本。</summary>
     public string AlarmText { get => _alarmText; set => SetProperty(ref _alarmText, value); }
+
+    private bool _isDeviceConnected = true;
+    private IEventAggregator _eventAggregator;
+
+    /// <summary>当前选中设备是否已连接。</summary>
+    public bool IsDeviceConnected { get => _isDeviceConnected; set => SetProperty(ref _isDeviceConnected, value); }
 
     // ─── 趋势图 ───
 
@@ -91,7 +101,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
         _realTimeStore = realTimeStore ?? throw new ArgumentNullException(nameof(realTimeStore));
         _acquisitionHost = acquisitionHost ?? throw new ArgumentNullException(nameof(acquisitionHost));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
-
+        _eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
         // 订阅配置重载事件
         eventAggregator.GetEvent<ConfigurationReloadedEvent>().Subscribe(LoadDevices);
 
@@ -152,6 +162,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
         // 延迟加载设备列表（等待 AcquisitionHost 初始化完成）
         _cts = new CancellationTokenSource();
         _ = SubscribeToRealtimeDataAsync(_cts.Token);
+        _ = StartConnectionCheckLoop(_cts.Token);
 
         Application.Current?.Dispatcher.InvokeAsync(async () =>
         {
@@ -205,11 +216,14 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                 isGauge = cache.isGauge;
             }
 
+            var driver = _acquisitionHost.GetDriver(device.Id);
+            bool isConnected = driver?.IsConnected ?? false;
+
             var item = new TagDisplayItem(tag.Id)
             {
                 TagName = tag.Name,
                 Value = "-",
-                Quality = "Good",
+                Quality = isConnected ? "Good" : "Bad",
                 Timestamp = "-",
                 Description = tag.Description,
                 IsNumeric = IsNumericType(tag.DataType),
@@ -344,7 +358,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
             }
             catch
             {
-                MessageBox.Show($"写入格式不正确，无法转换为 {targetTag.DataType}", "写入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                _eventAggregator.GetEvent<NotificationEvent>().Publish(new NotificationMessage
+                {
+                    Title = "写入失败",
+                    Message = $"写入格式不正确，无法转换为 {targetTag.DataType}",
+                    Type = NotificationType.Error
+                });
                 return;
             }
 
@@ -356,21 +375,32 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                     try
                     {
                         await driver.WriteTagAsync(targetTag, writeValue, CancellationToken.None);
-                        Application.Current?.Dispatcher.Invoke(() =>
+                        _eventAggregator.GetEvent<NotificationEvent>().Publish(new NotificationMessage
                         {
-                            MessageBox.Show("写入指令已下发", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                            Title = "写入成功",
+                            Message = $"测点 [{targetTag.Name}] 写入指令已下发",
+                            Type = NotificationType.Success
                         });
                     }
                     catch (Exception ex)
                     {
-                        Application.Current?.Dispatcher.Invoke(() =>
-                            MessageBox.Show($"写入失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error));
+                        _eventAggregator.GetEvent<NotificationEvent>().Publish(new NotificationMessage
+                        {
+                            Title = "写入错误",
+                            Message = ex.Message,
+                            Type = NotificationType.Error
+                        });
                     }
                 });
             }
             else
             {
-                MessageBox.Show("无法获取设备驱动实例，请检查设备是否连接", "写入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                _eventAggregator.GetEvent<NotificationEvent>().Publish(new NotificationMessage
+                {
+                    Title = "写入失败",
+                    Message = "无法获取设备驱动实例，请检查设备是否连接",
+                    Type = NotificationType.Error
+                });
             }
         });
     }
@@ -500,19 +530,90 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
         }
     }
 
-    private void UpdateAlarmStatus(TagValue value)
+    private void UpdateAlarmStatus(TagValue? value)
     {
-        // 根据报警相关标签更新报警状态
-        if (value.TagName == "Line.AlarmActive" && value.Value is bool alarmActive && alarmActive)
+        if (_selectedDevice == null) return;
+
+        // 1. 优先检查物理连接状态
+        if (!IsDeviceConnected)
         {
             HasAlarm = true;
-            AlarmText = " 设备报警：产线异常，请检查！";
+            AlarmText = $" [{_selectedDevice.Name}] 连接失败，请检查后端服务、网络或设备配置！";
+            return;
         }
-        else if (value.TagName == "Line.AlarmActive")
+
+        // 2. 检查报警相关标签
+        if (value != null)
+        {
+            if (value.TagName == "Line.AlarmActive" && value.Value is bool alarmActive && alarmActive)
+            {
+                HasAlarm = true;
+                AlarmText = $" [{_selectedDevice.Name}] 设备报警：产线异常，请检查！";
+                return;
+            }
+            else if (value.TagName == "Line.AlarmActive")
+            {
+                HasAlarm = false;
+                AlarmText = "系统正常，无活跃报警";
+                return;
+            }
+        }
+        
+        // 3. 如果连接正常且没有新的报警标签触发，维持当前状态或根据连接恢复刷新
+        if (HasAlarm && AlarmText.Contains("连接失败"))
         {
             HasAlarm = false;
             AlarmText = "系统正常，无活跃报警";
         }
+        else if (!HasAlarm && AlarmText.Contains("连接失败"))
+        {
+            // 防止状态不一致
+            AlarmText = "系统正常，无活跃报警";
+        }
+    }
+
+    /// <summary>
+    /// 定期检查设备连接状态的任务。
+    /// </summary>
+    private async Task StartConnectionCheckLoop(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                if (SelectedDevice != null)
+                {
+                    var driver = _acquisitionHost.GetDriver(SelectedDevice.Id);
+                    bool connected = driver?.IsConnected ?? false;
+
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        if (IsDeviceConnected != connected)
+                        {
+                            IsDeviceConnected = connected;
+                            UpdateAlarmStatus(null);
+                            
+                            // 无论连上还是断开，都同步更新表格状态
+                            foreach (var item in TagTable)
+                            {
+                                if (connected)
+                                {
+                                    // 恢复连接时，将 Bad 状态改为 Good (等待下一次真实数据刷新)
+                                    if (item.Quality == "Bad") item.Quality = "Good";
+                                }
+                                else
+                                {
+                                    // 断开连接时，标记为 Bad
+                                    if (item.Quality != "Init") item.Quality = "Bad";
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private static bool IsNumericType(TagDataType dt) => dt switch

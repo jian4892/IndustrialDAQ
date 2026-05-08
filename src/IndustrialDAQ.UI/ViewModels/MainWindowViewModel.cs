@@ -1,5 +1,7 @@
-// File: MainWindowViewModel.cs  Module: UI (ViewModels)  Author: IndustrialDAQ Team
+using System.Collections.ObjectModel;
+using IndustrialDAQ.UI.Events;
 using Prism.Commands;
+using Prism.Events;
 using Prism.Mvvm;
 using Prism.Navigation.Regions;
 
@@ -11,6 +13,10 @@ namespace IndustrialDAQ.UI.ViewModels;
 public class MainWindowViewModel : BindableBase
 {
     private readonly IRegionManager _regionManager;
+    private readonly IEventAggregator _eventAggregator;
+
+    /// <summary>全局通知集合。</summary>
+    public ObservableCollection<NotificationMessage> Notifications { get; } = new();
 
     private string _currentPage = "首页";
     /// <summary>当前页面标题。</summary>
@@ -27,9 +33,13 @@ public class MainWindowViewModel : BindableBase
     /// <summary>统一导航命令，参数为视图名称。</summary>
     public DelegateCommand<string> NavigateCommand { get; }
 
-    public MainWindowViewModel(IRegionManager regionManager)
+    /// <summary>手动关闭通知命令。</summary>
+    public DelegateCommand<NotificationMessage> CloseNotificationCommand { get; }
+
+    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator)
     {
         _regionManager = regionManager;
+        _eventAggregator = eventAggregator;
 
         NavigateCommand = new DelegateCommand<string>(page =>
         {
@@ -59,7 +69,37 @@ public class MainWindowViewModel : BindableBase
             StatusMessage = $"📍 {CurrentPage} — 已就绪";
         });
 
+        CloseNotificationCommand = new DelegateCommand<NotificationMessage>(msg =>
+        {
+            if (msg != null && Notifications.Contains(msg))
+                Notifications.Remove(msg);
+        });
+
+        // 订阅全局通知事件
+        _eventAggregator.GetEvent<NotificationEvent>().Subscribe(OnNotificationReceived);
+
         IsConnected = true;
         StatusMessage = "📍 首页 — 已就绪";
+    }
+
+    private void OnNotificationReceived(NotificationMessage message)
+    {
+        if (message == null) return;
+
+        // 在 UI 线程添加通知
+        System.Windows.Application.Current.Dispatcher.Invoke(async () =>
+        {
+            Notifications.Add(message);
+
+            // 自动消失逻辑
+            if (message.DurationMs > 0)
+            {
+                await Task.Delay(message.DurationMs);
+                if (Notifications.Contains(message))
+                {
+                    Notifications.Remove(message);
+                }
+            }
+        });
     }
 }

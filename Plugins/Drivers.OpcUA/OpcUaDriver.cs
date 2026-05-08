@@ -49,81 +49,102 @@ public sealed class OpcUaDriver : IProtocolDriver
         if (_connected) return;
         ct.ThrowIfCancellationRequested();
 
-        var appConfig = new ApplicationConfiguration
+        // 如果已存在旧会话，先断开
+        await DisconnectAsync(ct).ConfigureAwait(false);
+
+        // 初始化 ApplicationInstance（仅一次）
+        if (_application == null)
         {
-            ApplicationName = "IndustrialDAQ OPC UA Client",
-            ApplicationType = ApplicationType.Client,
-            ApplicationUri = $"urn:IndustrialDAQ:{Environment.MachineName}",
-            SecurityConfiguration = new SecurityConfiguration
+            var appConfig = new ApplicationConfiguration
             {
-                ApplicationCertificate = new CertificateIdentifier
+                ApplicationName = "IndustrialDAQ OPC UA Client",
+                ApplicationType = ApplicationType.Client,
+                ApplicationUri = $"urn:IndustrialDAQ:{Environment.MachineName}",
+                SecurityConfiguration = new SecurityConfiguration
                 {
-                    StoreType = CertificateStoreType.Directory,
-                    StorePath = GetCertificateStorePath()
+                    ApplicationCertificate = new CertificateIdentifier
+                    {
+                        StoreType = CertificateStoreType.Directory,
+                        StorePath = GetCertificateStorePath()
+                    },
+                    AutoAcceptUntrustedCertificates = true,
+                    RejectSHA1SignedCertificates = false,
+                    MinimumCertificateKeySize = 1024
                 },
-                AutoAcceptUntrustedCertificates = true,
-                RejectSHA1SignedCertificates = false,
-                MinimumCertificateKeySize = 1024
-            },
-            TransportConfigurations = new TransportConfigurationCollection(),
-            TransportQuotas = new TransportQuotas { OperationTimeout = _timeoutMs },
-            ClientConfiguration = new ClientConfiguration { DefaultSessionTimeout = 60000 }
-        };
+                TransportConfigurations = new TransportConfigurationCollection(),
+                TransportQuotas = new TransportQuotas { OperationTimeout = _timeoutMs },
+                ClientConfiguration = new ClientConfiguration { DefaultSessionTimeout = 60000 }
+            };
 
-        // 确保证书目录存在
-        Directory.CreateDirectory(GetCertificateStorePath());
+            // 确保证书目录存在
+            Directory.CreateDirectory(GetCertificateStorePath());
 
-        await appConfig.Validate(ApplicationType.Client).ConfigureAwait(false);
+            await appConfig.Validate(ApplicationType.Client).ConfigureAwait(false);
 
-        _application = new ApplicationInstance
-        {
-            ApplicationType = ApplicationType.Client,
-            ApplicationName = "IndustrialDAQ OPC UA Client",
-            ApplicationConfiguration = appConfig
-        };
+            _application = new ApplicationInstance
+            {
+                ApplicationType = ApplicationType.Client,
+                ApplicationName = "IndustrialDAQ OPC UA Client",
+                ApplicationConfiguration = appConfig
+            };
 
-        // 检查并创建证书（不存在则自动生成自签名证书）
-        bool hasCert = await _application.CheckApplicationInstanceCertificate(true, 2048).ConfigureAwait(false);
-        if (!hasCert)
-        {
-#pragma warning disable CS0618 // 此 SDK 版本未提供 CertificateBuilder，使用旧 API
-            var certificate = CertificateFactory.CreateCertificate(
-                _application.ApplicationConfiguration.SecurityConfiguration.ApplicationCertificate.StoreType,
-                _application.ApplicationConfiguration.SecurityConfiguration.ApplicationCertificate.StorePath,
-                null,
-                _application.ApplicationConfiguration.ApplicationUri,
-                _application.ApplicationConfiguration.ApplicationName,
-                null,
-                null,
-                2048,
-                DateTime.UtcNow,
-                120,
-                256,
-                false,
-                null,
-                null,
-                -1);
-            _application.ApplicationConfiguration.SecurityConfiguration.ApplicationCertificate.Certificate = certificate;
-#pragma warning restore CS0618
+            // 检查并创建证书（不存在则自动生成自签名证书，存在则复用）
+            bool hasCert = await _application.CheckApplicationInstanceCertificate(false, 2048).ConfigureAwait(false);
+            if (!hasCert)
+            {
+                throw new Exception("客户端证书初始化失败，请检查证书存储路径权限。");
+            }
         }
 
-        // --- 改用发现机制获取端点 ---
-        var endpoint = CoreClientUtils.SelectEndpoint(
-            appConfig,
-            _endpointUrl,    // 例如 "opc.tcp://192.168.0.1:4840"
-            useSecurity: false);
-        var endpointConfig = EndpointConfiguration.Create(appConfig);
-        var configuredEndpoint = new ConfiguredEndpoint(null, endpoint, endpointConfig);
-        // --- 构建用户身份 ---
+        // 获取 ApplicationConfiguration（从已初始化的 _application 中取出）
+        var config = _application.ApplicationConfiguration;
 
+        // 发现端点（优先尝试无安全连接，若不支持则尝试安全连接）
+        var endpoint = CoreClientUtils.SelectEndpoint(config, _endpointUrl, useSecurity: false);
+        if (endpoint == null)
+        {
+            endpoint = CoreClientUtils.SelectEndpoint(config, _endpointUrl, useSecurity: true);
+        }
+
+        if (endpoint == null)
+        {
+            throw new Exception($"无法在 {_endpointUrl} 发现有效的 OPC UA 端点，请确认地址正确且服务器已开启。");
+        }
+
+
+        var endpointConfig = EndpointConfiguration.Create(config);
+        var configuredEndpoint = new ConfiguredEndpoint(null, endpoint, endpointConfig);
+
+
+
+        // 构建用户身份
         IUserIdentity identity;
         if (!string.IsNullOrEmpty(OpcUaUsername))
             identity = new UserIdentity(OpcUaUsername, OpcUaPassword);
         else
-            identity = new UserIdentity(new AnonymousIdentityToken()); // 匿名
+            identity = new UserIdentity(new AnonymousIdentityToken());
 
-        _session = await Session.Create(appConfig, configuredEndpoint, false,
-            "IndustrialDAQ Session", 60000, identity, null, ct).ConfigureAwait(false);
+        // 创建会话
+        _session = await Session.Create(
+            config,
+            configuredEndpoint,
+            false,                      // 不更新配置
+            "IndustrialDAQ Session",
+            60000,                      // 会话超时（毫秒）
+            identity,
+            null,                       // 可选的 preferred locales
+            ct
+        ).ConfigureAwait(false);
+
+        // 注册保活事件，探测静默断连
+        _session.KeepAlive += (s, e) =>
+        {
+            if (ServiceResult.IsBad(e.Status))
+            {
+                _connected = false;
+                // 注意：这里仅标记状态，由外部采集循环检测并触发重连
+            }
+        };
 
         _connected = true;
     }
@@ -236,7 +257,9 @@ public sealed class OpcUaDriver : IProtocolDriver
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Console.WriteLine($"[调试] 读取失败，原因: {ex.Message}"); // 添加这行排错
+                _connected = false; // 关键：标记为断开，以便 UI 触发报警并启动重连循环
+                try { _session?.Close(); } catch { }
+                
                 foreach (var (_, tag, _) in validTags)
                 {
                     if (resultMap.ContainsKey(tag.Id)) continue;
@@ -278,10 +301,18 @@ public sealed class OpcUaDriver : IProtocolDriver
         };
 
         var writeValues = new WriteValueCollection { writeValue };
-        var response = await _session.WriteAsync(null, writeValues, ct).ConfigureAwait(false);
+        try
+        {
+            var response = await _session.WriteAsync(null, writeValues, ct).ConfigureAwait(false);
 
-        if (response.Results.Count > 0 && StatusCode.IsBad(response.Results[0]))
-            throw new InvalidOperationException($"OPC UA 写入失败: {response.Results[0]}");
+            if (response.Results.Count > 0 && StatusCode.IsBad(response.Results[0]))
+                throw new InvalidOperationException($"OPC UA 写入失败: {response.Results[0]}");
+        }
+        catch (Exception)
+        {
+            _connected = false;
+            throw;
+        }
     }
 
     /// <inheritdoc />
