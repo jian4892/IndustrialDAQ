@@ -86,9 +86,10 @@ try
             services.AddSingleton<AcquisitionChannel>();
             services.AddSingleton<IDriverFactory, DriverFactory>();
             services.AddSingleton<RealTimeStore>();
-            services.AddSingleton<AlarmChannel>();
+            services.AddSingleton<AlarmEventBus>();
             services.AddSingleton<DataProcessor>();
             services.AddSingleton<AlarmEngine>();
+            services.AddSingleton<AlarmHistoryRepository>();
 
             services.AddDbContextFactory<DaqDbContext>(options =>
                 options.UseSqlite("Data Source=industrialdaq.db"));
@@ -172,33 +173,50 @@ try
     // ──────────── 8. 配置报警规则 ────────────
     alarmEngine.RegisterRules(new[]
     {
+        // 灌装液位高限报警
         new AlarmRule
         {
-            RuleId = "alm-001",
+            RuleId = "alm-fill-high",
+            TagId = "tag-filling-actuallevel",
+            TagName = "Filling.ActualLevel",
+            AlarmType = AlarmType.High,
+            Threshold = 700.0,
+            Hysteresis = 30.0,
+            Severity = AlarmSeverity.Warning,
+            Title = "灌装液位偏高",
+            MessageTemplate = "灌装液位 {Value} mL 超过 {Threshold} mL",
+            Source = "灌装产线 S7-1500",
+            CooldownSeconds = 15
+        },
+        // 灌装液位高高限报警
+        new AlarmRule
+        {
+            RuleId = "alm-fill-highhigh",
+            TagId = "tag-filling-actuallevel",
+            TagName = "Filling.ActualLevel",
+            AlarmType = AlarmType.HighHigh,
+            HighHighThreshold = 800.0,
+            Hysteresis = 30.0,
+            Severity = AlarmSeverity.Critical,
+            Title = "灌装液位超高（溢出风险）",
+            MessageTemplate = "灌装液位 {Value} mL 超过高高限 {Threshold} mL！",
+            Source = "灌装产线 S7-1500",
+            CooldownSeconds = 10
+        },
+        // 传送速度高限报警
+        new AlarmRule
+        {
+            RuleId = "alm-speed-high",
             TagId = "tag-conveyor-actualspeed",
             TagName = "Conveyor.ActualSpeed",
-            Operator = ">",
+            AlarmType = AlarmType.High,
             Threshold = 25.0,
             Hysteresis = 2.0,
             Severity = AlarmSeverity.Warning,
-            Title = "传送带速度偏高",
-            MessageTemplate = "传送带速度 {Value} m/min 超过 {Threshold} m/min",
-            Source = "灌装产线 S7-1500 PLC",
-            CooldownSeconds = 10
-        },
-        new AlarmRule
-        {
-            RuleId = "alm-002",
-            TagId = "tag-filling-actuallevel",
-            TagName = "Filling.ActualLevel",
-            Operator = ">",
-            Threshold = 750.0,
-            Hysteresis = 20.0,
-            Severity = AlarmSeverity.Critical,
-            Title = "灌装液位超高",
-            MessageTemplate = "灌装液位 {Value} mL 超出上限 {Threshold} mL，有溢出风险！",
-            Source = "灌装产线 S7-1500 PLC",
-            CooldownSeconds = 10
+            Title = "传送速度偏高",
+            MessageTemplate = "传送速度 {Value} m/min 超过 {Threshold} m/min",
+            Source = "灌装产线 S7-1500",
+            CooldownSeconds = 15
         }
     });
 
@@ -229,7 +247,8 @@ try
     {
         try
         {
-            await foreach (TagValue value in realTimeStore.ChangeStream.ReadAllAsync(observerCts.Token))
+            var reader = realTimeStore.Subscribe();
+            await foreach (TagValue value in reader.ReadAllAsync(observerCts.Token))
             {
                 string access = value.TagName.Contains(".Set") || value.TagName.Contains(".Start")
                     || value.TagName.Contains(".Stop") || value.TagName.Contains(".AutoMode")
@@ -245,20 +264,27 @@ try
     var alarmObserverCts = new CancellationTokenSource();
     _ = Task.Run(async () =>
     {
-        var alarmChannel = host.Services.GetRequiredService<AlarmChannel>();
+        var alarmEventBus = host.Services.GetRequiredService<AlarmEventBus>();
         try
         {
-            await foreach (AlarmRecord alarm in alarmChannel.Reader.ReadAllAsync(alarmObserverCts.Token))
+            await foreach (AlarmEvent alarmEvent in alarmEventBus.Subscribe(alarmObserverCts.Token))
             {
-                string sev = alarm.Severity switch
+                string sev = alarmEvent.Rule.Severity switch
                 {
                     AlarmSeverity.Critical => "严重",
                     AlarmSeverity.Warning => "警告",
                     _ => "信息"
                 };
-                Console.ForegroundColor = alarm.Severity == AlarmSeverity.Critical
+                string state = alarmEvent.State switch
+                {
+                    AlarmState.Active => "触发",
+                    AlarmState.Acknowledged => "已确认",
+                    AlarmState.Normal => "已恢复",
+                    _ => "未知"
+                };
+                Console.ForegroundColor = alarmEvent.Rule.Severity == AlarmSeverity.Critical
                     ? ConsoleColor.Red : ConsoleColor.Yellow;
-                Console.WriteLine($"[报警] [{sev}] {alarm.Title} — {alarm.Message}");
+                Console.WriteLine($"[报警] [{sev}] [{state}] {alarmEvent.Rule.Title} — 值={alarmEvent.TriggerValue:F2}");
                 Console.ResetColor();
             }
         }

@@ -17,6 +17,9 @@ public class NotificationMessage
     public NotificationType Type { get; set; } = NotificationType.Info;
     public int DurationMs { get; set; } = 3000;
 
+    /// <summary>点击后导航到的页面（可选）。</summary>
+    public string? NavigateTo { get; set; }
+
     public string Icon => Type switch
     {
         NotificationType.Success => "✅",

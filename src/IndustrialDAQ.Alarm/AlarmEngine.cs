@@ -9,24 +9,22 @@ namespace IndustrialDAQ.Alarm;
 
 /// <summary>
 /// 报警引擎 — 订阅实时数据库变更流，根据报警规则对测点值进行阈值判断，
-/// 管理报警生命周期（触发→确认→清除），通过 <see cref="AlarmChannel"/> 发布报警事件。
+/// 管理报警生命周期（触发→确认→清除），通过 <see cref="AlarmEventBus"/> 发布报警事件。
 /// 支持回滞防抖和冷却时间，防止报警风暴。
+/// 使用状态机管理报警状态转换，只在状态变化时触发事件。
 /// 作为 <see cref="IHostedService"/> 运行。
 /// </summary>
 public sealed class AlarmEngine : IHostedService
 {
     private readonly RealTimeStore _store;
-    private readonly AlarmChannel _alarmChannel;
+    private readonly AlarmEventBus _eventBus;
     private readonly ILogger<AlarmEngine> _logger;
 
     /// <summary>所有报警规则（线程安全字典）。</summary>
     private readonly ConcurrentDictionary<string, AlarmRule> _rules = new();
 
-    /// <summary>规则 → 当前活跃的报警ID（如果有值则表示处于报警状态）。</summary>
-    private readonly ConcurrentDictionary<string, string?> _activeAlarmIds = new();
-
-    /// <summary>规则 → 上次触发时间（用于冷却时间控制）。</summary>
-    private readonly ConcurrentDictionary<string, DateTime> _lastTriggeredAt = new();
+    /// <summary>规则 → 报警实例（管理状态机）。</summary>
+    private readonly ConcurrentDictionary<string, AlarmInstance> _instances = new();
 
     /// <summary>报警 ID 计数器。</summary>
     private long _alarmIdCounter;
@@ -37,10 +35,10 @@ public sealed class AlarmEngine : IHostedService
     /// <summary>
     /// 初始化报警引擎。
     /// </summary>
-    public AlarmEngine(RealTimeStore store, AlarmChannel alarmChannel, ILogger<AlarmEngine> logger)
+    public AlarmEngine(RealTimeStore store, AlarmEventBus eventBus, ILogger<AlarmEngine> logger)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _alarmChannel = alarmChannel ?? throw new ArgumentNullException(nameof(alarmChannel));
+        _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,9 +48,15 @@ public sealed class AlarmEngine : IHostedService
     public void RegisterRule(AlarmRule rule)
     {
         _rules[rule.RuleId] = rule;
-        _activeAlarmIds[rule.RuleId] = null;
-        _logger.LogInformation("已注册报警规则: {RuleId} [{TagName} {Operator} {Threshold}] {Title}",
-            rule.RuleId, rule.TagName, rule.Operator, rule.Threshold, rule.Title);
+
+        // 创建报警实例并订阅状态变化事件
+        string alarmId = $"ALM-{Interlocked.Increment(ref _alarmIdCounter):D6}";
+        var instance = new AlarmInstance(rule, alarmId);
+        instance.StateChanged += OnAlarmStateChanged;
+        _instances[rule.RuleId] = instance;
+
+        _logger.LogInformation("已注册报警规则: {RuleId} [{TagName} {AlarmType} {Threshold}] {Title}",
+            rule.RuleId, rule.TagName, rule.AlarmType, rule.Threshold, rule.Title);
     }
 
     /// <summary>
@@ -61,6 +65,39 @@ public sealed class AlarmEngine : IHostedService
     public void RegisterRules(IEnumerable<AlarmRule> rules)
     {
         foreach (var rule in rules) RegisterRule(rule);
+    }
+
+    /// <summary>
+    /// 确认报警。
+    /// </summary>
+    /// <param name="ruleId">规则 ID。</param>
+    /// <returns>是否成功确认。</returns>
+    public bool AcknowledgeAlarm(string ruleId)
+    {
+        if (_instances.TryGetValue(ruleId, out AlarmInstance? instance))
+        {
+            return instance.Acknowledge();
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 获取所有活跃报警。
+    /// </summary>
+    public IReadOnlyList<AlarmInstance> GetActiveAlarms()
+    {
+        return _instances.Values
+            .Where(i => i.CurrentState == AlarmState.Active || i.CurrentState == AlarmState.Acknowledged)
+            .ToList()
+            .AsReadOnly();
+    }
+
+    /// <summary>
+    /// 获取所有报警实例。
+    /// </summary>
+    public IReadOnlyList<AlarmInstance> GetAllInstances()
+    {
+        return _instances.Values.ToList().AsReadOnly();
     }
 
     /// <inheritdoc />
@@ -84,7 +121,7 @@ public sealed class AlarmEngine : IHostedService
             catch (OperationCanceledException) { }
         }
 
-        _alarmChannel.Writer.Complete();
+        _eventBus.Complete();
         _cts?.Dispose();
         _logger.LogInformation("报警引擎已停止");
     }
@@ -94,22 +131,38 @@ public sealed class AlarmEngine : IHostedService
     /// </summary>
     private async Task ConsumeAsync(CancellationToken ct)
     {
+        _logger.LogDebug("报警引擎消费循环已启动，当前注册规则数: {Count}", _rules.Count);
         try
         {
-            await foreach (TagValue value in _store.ChangeStream.ReadAllAsync(ct).ConfigureAwait(false))
+            var reader = _store.Subscribe();
+            await foreach (TagValue value in reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 ct.ThrowIfCancellationRequested();
 
                 // 跳过质量不良的数据
-                if (value.Quality == Quality.Bad) continue;
+                if (value.Quality == Quality.Bad)
+                {
+                    _logger.LogTrace("跳过质量不良数据: {TagId} = {Value}", value.TagId, value.Value);
+                    continue;
+                }
 
                 // 查找关联此测点的报警规则
                 var matchedRules = _rules.Values
-                    .Where(r => r.Enabled && r.TagId == value.TagId);
+                    .Where(r => r.Enabled && r.TagId == value.TagId)
+                    .ToList();
+
+                if (matchedRules.Count > 0)
+                {
+                    _logger.LogDebug("测点 {TagId} = {Value} 匹配到 {Count} 条规则",
+                        value.TagId, value.Value, matchedRules.Count);
+                }
 
                 foreach (AlarmRule rule in matchedRules)
                 {
-                    EvaluateRule(rule, value);
+                    if (_instances.TryGetValue(rule.RuleId, out AlarmInstance? instance))
+                    {
+                        EvaluateInstance(instance, value);
+                    }
                 }
             }
         }
@@ -117,148 +170,145 @@ public sealed class AlarmEngine : IHostedService
         {
             // 正常退出
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "报警引擎消费循环异常");
+        }
     }
 
     /// <summary>
-    /// 评估单条报警规则，处理状态转换（触发 / 清除）。
+    /// 评估报警实例，处理状态转换。
     /// </summary>
-    private void EvaluateRule(AlarmRule rule, TagValue value)
+    private void EvaluateInstance(AlarmInstance instance, TagValue value)
     {
         try
         {
             if (!TryConvertToDouble(value.Value, out double currentValue))
-                return;
-
-            bool conditionMet = EvaluateCondition(currentValue, rule.Threshold, rule.Operator);
-            bool isCurrentlyAlarming = _activeAlarmIds.TryGetValue(rule.RuleId, out string? activeId) && activeId != null;
-            var now = DateTime.UtcNow;
-
-            if (conditionMet && !isCurrentlyAlarming)
             {
-                // 状态转换: 正常 → 报警
-                // 检查冷却时间
-                if (_lastTriggeredAt.TryGetValue(rule.RuleId, out DateTime lastTrigger))
-                {
-                    double elapsed = (now - lastTrigger).TotalSeconds;
-                    if (elapsed < rule.CooldownSeconds)
-                        return; // 冷却中，跳过
-                }
+                _logger.LogTrace("无法转换值: {TagId} = {Value}", value.TagId, value.Value);
+                return;
+            }
 
-                string alarmId = $"ALM-{Interlocked.Increment(ref _alarmIdCounter):D6}";
-                _activeAlarmIds[rule.RuleId] = alarmId;
-                _lastTriggeredAt[rule.RuleId] = now;
-                var alarmRecord = new AlarmRecord
-                {
-                    Id = alarmId,
-                    RuleId = rule.RuleId,
-                    Severity = rule.Severity,
-                    Source = rule.Source,
-                    Title = rule.Title,
-                    Message = BuildMessage(rule, value, currentValue),
-                    TagId = rule.TagId,
-                    TagName = rule.TagName,
-                    TriggerValue = currentValue,
-                    Threshold = rule.Threshold,
-                    OccurredAt = now,
-                    Status = AlarmStatus.Active
-                };
+            _logger.LogDebug("评估规则 {RuleId}: {TagName} = {Value}, 阈值 = {Threshold}, 类型 = {AlarmType}",
+                instance.Rule.RuleId, instance.Rule.TagName, currentValue,
+                instance.Rule.Threshold, instance.Rule.AlarmType);
 
-                // 发布到报警管道
-                _alarmChannel.Writer.TryWrite(alarmRecord);
+            bool stateChanged = instance.Evaluate(currentValue);
 
-                string severityLabel = rule.Severity switch
+            if (stateChanged)
+            {
+                string severityLabel = instance.Rule.Severity switch
                 {
                     AlarmSeverity.Critical => "严重",
                     AlarmSeverity.Warning => "警告",
                     _ => "信息"
                 };
 
-                _logger.LogWarning("[{Severity}] {AlarmId}: {Title} — {TagName}={Value}, 阈值 {Operator}{Threshold}",
-                    severityLabel, alarmId, rule.Title, rule.TagName, currentValue, rule.Operator, rule.Threshold);
-            }
-            else if (!conditionMet && isCurrentlyAlarming)
-            {
-                // 状态转换: 报警 → 正常（考虑回滞）
-                double returnThreshold = rule.Operator switch
+                string stateLabel = instance.CurrentState switch
                 {
-                    ">" or ">=" => rule.Threshold - rule.Hysteresis,
-                    "<" or "<=" => rule.Threshold + rule.Hysteresis,
-                    _ => rule.Threshold
+                    AlarmState.Active => "触发",
+                    AlarmState.Acknowledged => "已确认",
+                    AlarmState.Normal => "已恢复",
+                    _ => "未知"
                 };
 
-                bool shouldClear = rule.Operator switch
-                {
-                    ">" or ">=" => currentValue <= returnThreshold,
-                    "<" or "<=" => currentValue >= returnThreshold,
-                    "==" => Math.Abs(currentValue - rule.Threshold) > rule.Hysteresis,
-                    "!=" => Math.Abs(currentValue - rule.Threshold) <= rule.Hysteresis,
-                    _ => false
-                };
-
-                if (shouldClear)
-                {
-                    string clearedId = activeId ?? $"ALM-{Interlocked.Increment(ref _alarmIdCounter):D6}";
-                    _activeAlarmIds[rule.RuleId] = null;
-                    
-                    var clearRecord = new AlarmRecord
-                    {
-                        Id = clearedId,
-                        RuleId = rule.RuleId,
-                        Severity = rule.Severity,
-                        Source = rule.Source,
-                        Title = rule.Title,
-                        Message = $"[已恢复] {BuildMessage(rule, value, currentValue)}",
-                        TagId = rule.TagId,
-                        TagName = rule.TagName,
-                        TriggerValue = currentValue,
-                        Threshold = rule.Threshold,
-                        OccurredAt = now,
-                        Status = AlarmStatus.Cleared,
-                        ClearedAt = now
-                    };
-                    
-                    _alarmChannel.Writer.TryWrite(clearRecord);
-                    
-                    _logger.LogInformation("报警已自动清除: {RuleId} [{TagName}={Value}]",
-                        rule.RuleId, rule.TagName, currentValue);
-                }
+                _logger.LogWarning("[{Severity}] {AlarmId}: {Title} — {TagName}={Value}, 状态: {State}",
+                    severityLabel, instance.AlarmId, instance.Rule.Title,
+                    instance.Rule.TagName, currentValue, stateLabel);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "评估报警规则 {RuleId} 时发生异常", rule.RuleId);
+            _logger.LogError(ex, "评估报警实例 {AlarmId} 时发生异常", instance.AlarmId);
         }
     }
 
     /// <summary>
-    /// 根据运算符比较当前值与阈值。
+    /// 处理报警状态变化事件。
     /// </summary>
-    private static bool EvaluateCondition(double value, double threshold, string op) => op switch
+    private void OnAlarmStateChanged(object? sender, AlarmInstanceStateChangedEventArgs e)
     {
-        ">" => value > threshold,
-        "<" => value < threshold,
-        ">=" => value >= threshold,
-        "<=" => value <= threshold,
-        "==" => Math.Abs(value - threshold) < 0.0001,
-        "!=" => Math.Abs(value - threshold) >= 0.0001,
-        _ => false
-    };
+        try
+        {
+            var eventType = e.NewState switch
+            {
+                AlarmState.Active => AlarmEventType.Triggered,
+                AlarmState.Acknowledged => AlarmEventType.Acknowledged,
+                AlarmState.Normal => AlarmEventType.Cleared,
+                _ => AlarmEventType.Triggered
+            };
+
+            var alarmStatus = e.NewState switch
+            {
+                AlarmState.Active => AlarmStatus.Active,
+                AlarmState.Acknowledged => AlarmStatus.Acknowledged,
+                AlarmState.Normal => AlarmStatus.Cleared,
+                _ => AlarmStatus.Active
+            };
+
+            string message = BuildMessage(e.Rule, e.TriggerValue ?? 0, e.NewState);
+
+            // 创建报警记录
+            var record = new AlarmRecord
+            {
+                Id = e.AlarmId,
+                RuleId = e.Rule.RuleId,
+                Severity = e.Rule.Severity,
+                Source = e.Rule.Source,
+                Title = e.Rule.Title,
+                Message = message,
+                TagId = e.Rule.TagId,
+                TagName = e.Rule.TagName,
+                TriggerValue = e.TriggerValue ?? 0,
+                Threshold = e.Rule.Threshold,
+                OccurredAt = e.Timestamp,
+                Status = alarmStatus,
+                AcknowledgedAt = e.NewState == AlarmState.Acknowledged ? e.Timestamp : null,
+                ClearedAt = e.NewState == AlarmState.Normal ? e.Timestamp : null
+            };
+
+            // 发布到事件总线
+            var alarmEvent = new AlarmEvent
+            {
+                EventType = eventType,
+                AlarmId = e.AlarmId,
+                Rule = e.Rule,
+                Record = record,
+                TriggerValue = e.TriggerValue ?? 0,
+                Timestamp = e.Timestamp,
+                State = e.NewState
+            };
+
+            _eventBus.Publish(alarmEvent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理报警状态变化事件时发生异常");
+        }
+    }
 
     /// <summary>
     /// 构建报警消息，替换消息模板中的占位符。
     /// </summary>
-    private static string BuildMessage(AlarmRule rule, TagValue value, double currentValue)
+    private static string BuildMessage(AlarmRule rule, double currentValue, AlarmState state)
     {
-        if (string.IsNullOrWhiteSpace(rule.MessageTemplate))
+        string prefix = state switch
         {
-            return $"{rule.TagName} 当前值: {currentValue}, 阈值: {rule.Operator}{rule.Threshold}";
-        }
+            AlarmState.Active => "[触发]",
+            AlarmState.Acknowledged => "[已确认]",
+            AlarmState.Normal => "[已恢复]",
+            _ => ""
+        };
 
-        return rule.MessageTemplate
-            .Replace("{TagName}", rule.TagName)
-            .Replace("{Value}", currentValue.ToString("F2"))
-            .Replace("{Threshold}", rule.Threshold.ToString("F2"))
-            .Replace("{Operator}", rule.Operator);
+        string baseMessage = string.IsNullOrWhiteSpace(rule.MessageTemplate)
+            ? $"{rule.TagName} 当前值: {currentValue:F2}, 阈值: {rule.Threshold:F2}"
+            : rule.MessageTemplate
+                .Replace("{TagName}", rule.TagName)
+                .Replace("{Value}", currentValue.ToString("F2"))
+                .Replace("{Threshold}", rule.Threshold.ToString("F2"))
+                .Replace("{Operator}", rule.AlarmType.ToString());
+
+        return $"{prefix} {baseMessage}";
     }
 
     /// <summary>
@@ -276,6 +326,7 @@ public sealed class AlarmEngine : IHostedService
             case byte b: result = b; return true;
             case ushort us: result = us; return true;
             case uint ui: result = ui; return true;
+            case bool b: result = b ? 1.0 : 0.0; return true;
             default:
                 result = 0;
                 return false;

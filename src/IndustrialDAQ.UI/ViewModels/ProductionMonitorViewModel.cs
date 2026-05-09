@@ -419,7 +419,8 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     {
         try
         {
-            await foreach (TagValue value in _realTimeStore.ChangeStream.ReadAllAsync(ct)
+            var reader = _realTimeStore.Subscribe();
+            await foreach (TagValue value in reader.ReadAllAsync(ct)
                 .ConfigureAwait(false))
             {
                 Application.Current?.Dispatcher.Invoke(() =>

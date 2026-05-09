@@ -1,5 +1,7 @@
 // File: MainWindow.xaml.cs  Module: UI (Shell)  Author: IndustrialDAQ Team
 using System.Windows;
+using System.Windows.Input;
+using IndustrialDAQ.UI.Events;
 using IndustrialDAQ.UI.ViewModels;
 using Prism.Ioc;
 using Prism.Navigation.Regions;
@@ -22,7 +24,7 @@ public partial class MainWindow : Window
         DataContext = vm;
     }
 
-    private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount == 2)
         {
@@ -31,6 +33,20 @@ public partial class MainWindow : Window
         else
         {
             DragMove();
+        }
+    }
+
+    /// <summary>
+    /// 通知点击事件 — 跳转到对应页面。
+    /// </summary>
+    private void NotificationBorder_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.Tag is NotificationMessage message)
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.NotificationClickCommand.Execute(message);
+            }
         }
     }
 

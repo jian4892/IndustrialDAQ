@@ -1,5 +1,9 @@
 // File: AlarmRecordViewModel.cs  Module: UI (ViewModels)  Author: IndustrialDAQ Team
 using System.Collections.ObjectModel;
+using System.Windows;
+using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Core.Models;
+using IndustrialDAQ.Storage;
 using Prism.Commands;
 using Prism.Mvvm;
 
@@ -7,9 +11,13 @@ namespace IndustrialDAQ.UI.ViewModels;
 
 /// <summary>
 /// 报警记录 ViewModel — 管理报警列表的展示、筛选和确认。
+/// 订阅 AlarmManager 的实时报警事件，与真实数据管道集成。
 /// </summary>
 public class AlarmRecordViewModel : BindableBase
 {
+    private readonly AlarmManager _alarmManager;
+    private readonly AlarmHistoryRepository _historyRepository;
+
     /// <summary>报警记录集合。</summary>
     public ObservableCollection<AlarmRecordItem> Alarms { get; } = new();
 
@@ -54,36 +62,113 @@ public class AlarmRecordViewModel : BindableBase
     /// <summary>确认全部报警命令。</summary>
     public DelegateCommand AcknowledgeAllCommand { get; }
 
-    public AlarmRecordViewModel()
+    /// <summary>刷新命令。</summary>
+    public DelegateCommand RefreshCommand { get; }
+
+    public AlarmRecordViewModel(AlarmManager alarmManager, AlarmHistoryRepository historyRepository)
     {
+        _alarmManager = alarmManager ?? throw new ArgumentNullException(nameof(alarmManager));
+        _historyRepository = historyRepository ?? throw new ArgumentNullException(nameof(historyRepository));
+
         AcknowledgeCommand = new DelegateCommand<AlarmRecordItem>(
             item => AcknowledgeAlarm(item!));
 
         AcknowledgeAllCommand = new DelegateCommand(AcknowledgeAllAlarms);
+        RefreshCommand = new DelegateCommand(() => _ = LoadHistoryAsync());
 
-        GenerateMockData();
-        ApplyFilter();
+        // 订阅报警事件
+        _alarmManager.AlarmTriggered += OnAlarmTriggered;
+        _alarmManager.AlarmAcknowledged += OnAlarmAcknowledged;
+        _alarmManager.AlarmCleared += OnAlarmCleared;
+        _alarmManager.ActiveAlarmsChanged += OnActiveAlarmsChanged;
+
+        // 加载历史数据
+        _ = LoadHistoryAsync();
     }
 
-    private void GenerateMockData()
+    /// <summary>
+    /// 从数据库加载报警历史记录。
+    /// </summary>
+    private async Task LoadHistoryAsync()
     {
-        var now = DateTime.Now;
-        Alarms.Add(new AlarmRecordItem("A-001", "严重", "灌装机 1", "灌装体积超限",
-            "灌装体积超出上限 800 mL，当前值: 856 mL", now.AddMinutes(-5), "活跃", "Temp_Reactor_01"));
-        Alarms.Add(new AlarmRecordItem("A-002", "警告", "旋盖机 1", "力矩偏低",
-            "旋盖力矩低于下限 2 Nm，当前值: 1.3 Nm", now.AddMinutes(-12), "活跃", "Temp_Boiler_03"));
-        Alarms.Add(new AlarmRecordItem("A-003", "严重", "传送带 A", "电机过热",
-            "传送带电机温度超过 85°C，当前值: 92°C", now.AddMinutes(-18), "已确认", "Flow_Boiler_03"));
-        Alarms.Add(new AlarmRecordItem("A-004", "信息", "灌装机 2", "维护提醒",
-            "距离下次保养还剩 48 小时", now.AddHours(-1), "已确认", "-"));
-        Alarms.Add(new AlarmRecordItem("A-005", "警告", "锅炉 #3", "压力波动",
-            "压力波动超过死区范围，当前波动: ±3.2 bar", now.AddMinutes(-25), "活跃", "Pressure_Reactor_01"));
-        Alarms.Add(new AlarmRecordItem("A-006", "严重", "旋盖机 2", "通讯中断",
-            "与旋盖机 2 的 Modbus 通讯中断，重试 3 次失败", now.AddMinutes(-30), "活跃", "-"));
-        Alarms.Add(new AlarmRecordItem("A-007", "信息", "CIP 清洗", "清洗完成",
-            "CIP 清洗程序已正常完成", now.AddHours(-2), "已清除", "-"));
-        Alarms.Add(new AlarmRecordItem("A-008", "警告", "传送带 B", "速度异常",
-            "传送速度偏差超过 ±10%，当前: 18 m/min (设定: 15 m/min)", now.AddMinutes(-45), "活跃", "Flow_Boiler_03"));
+        try
+        {
+            var (records, _) = await _historyRepository.GetHistoryAsync(
+                pageNumber: 1,
+                pageSize: 200,
+                cancellationToken: CancellationToken.None);
+
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                Alarms.Clear();
+                foreach (var record in records)
+                {
+                    Alarms.Add(AlarmRecordItem.FromDomain(record));
+                }
+                ApplyFilter();
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"加载报警历史失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 处理报警触发事件。
+    /// </summary>
+    private void OnAlarmTriggered(object? sender, AlarmEventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            var item = AlarmRecordItem.FromDomain(e.Record);
+            Alarms.Insert(0, item);
+            ApplyFilter();
+        });
+    }
+
+    /// <summary>
+    /// 处理报警确认事件。
+    /// </summary>
+    private void OnAlarmAcknowledged(object? sender, AlarmEventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            var existingItem = Alarms.FirstOrDefault(a => a.Id == e.Record.Id);
+            if (existingItem is not null)
+            {
+                existingItem.Status = "已确认";
+                existingItem.AcknowledgedAt = e.Record.AcknowledgedAt;
+                ApplyFilter();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 处理报警恢复事件。
+    /// </summary>
+    private void OnAlarmCleared(object? sender, AlarmEventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            var existingItem = Alarms.FirstOrDefault(a => a.Id == e.Record.Id);
+            if (existingItem is not null)
+            {
+                Alarms.Remove(existingItem);
+                ApplyFilter();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 处理活跃报警列表变更事件。
+    /// </summary>
+    private void OnActiveAlarmsChanged(object? sender, EventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            ActiveCount = _alarmManager.GetActiveAlarms().Count;
+        });
     }
 
     private void ApplyFilter()
@@ -114,20 +199,24 @@ public class AlarmRecordViewModel : BindableBase
     {
         if (item.Status == "活跃")
         {
-            item.Status = "已确认";
-            item.AcknowledgedAt = DateTime.Now;
-            ApplyFilter();
+            _alarmManager.AcknowledgeAlarm(item.Id);
         }
     }
 
     private void AcknowledgeAllAlarms()
     {
-        foreach (var item in Alarms.Where(a => a.Status == "活跃"))
-        {
-            item.Status = "已确认";
-            item.AcknowledgedAt = DateTime.Now;
-        }
-        ApplyFilter();
+        _alarmManager.AcknowledgeAllAlarms();
+    }
+
+    /// <summary>
+    /// 清理资源。
+    /// </summary>
+    public void Cleanup()
+    {
+        _alarmManager.AlarmTriggered -= OnAlarmTriggered;
+        _alarmManager.AlarmAcknowledged -= OnAlarmAcknowledged;
+        _alarmManager.AlarmCleared -= OnAlarmCleared;
+        _alarmManager.ActiveAlarmsChanged -= OnActiveAlarmsChanged;
     }
 }
 
@@ -161,8 +250,9 @@ public class AlarmRecordItem : BindableBase
     /// <summary>关联测点名称。</summary>
     public string TagName { get; }
 
+    private DateTime? _acknowledgedAt;
     /// <summary>确认时间。</summary>
-    public DateTime? AcknowledgedAt { get; set; }
+    public DateTime? AcknowledgedAt { get => _acknowledgedAt; set => SetProperty(ref _acknowledgedAt, value); }
 
     /// <summary>严重级别颜色。</summary>
     public string SeverityColor => Severity switch
@@ -193,5 +283,40 @@ public class AlarmRecordItem : BindableBase
         OccurredAt = occurredAt;
         _status = status;
         TagName = tagName;
+    }
+
+    /// <summary>
+    /// 从领域模型创建。
+    /// </summary>
+    public static AlarmRecordItem FromDomain(AlarmRecord record)
+    {
+        string severityText = record.Severity switch
+        {
+            AlarmSeverity.Critical => "严重",
+            AlarmSeverity.Warning => "警告",
+            AlarmSeverity.Info => "信息",
+            _ => "未知"
+        };
+
+        string statusText = record.Status switch
+        {
+            AlarmStatus.Active => "活跃",
+            AlarmStatus.Acknowledged => "已确认",
+            AlarmStatus.Cleared => "已清除",
+            _ => "未知"
+        };
+
+        return new AlarmRecordItem(
+            record.Id,
+            severityText,
+            record.Source,
+            record.Title,
+            record.Message,
+            record.OccurredAt,
+            statusText,
+            record.TagName)
+        {
+            AcknowledgedAt = record.AcknowledgedAt
+        };
     }
 }

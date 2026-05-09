@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.UI.Events;
 using Prism.Commands;
 using Prism.Events;
@@ -14,6 +16,7 @@ public class MainWindowViewModel : BindableBase
 {
     private readonly IRegionManager _regionManager;
     private readonly IEventAggregator _eventAggregator;
+    private readonly AlarmManager _alarmManager;
 
     /// <summary>全局通知集合。</summary>
     public ObservableCollection<NotificationMessage> Notifications { get; } = new();
@@ -30,16 +33,43 @@ public class MainWindowViewModel : BindableBase
     /// <summary>采集引擎连接状态。</summary>
     public bool IsConnected { get => _isConnected; set => SetProperty(ref _isConnected, value); }
 
+    private int _activeAlarmCount;
+    /// <summary>活跃报警数量。</summary>
+    public int ActiveAlarmCount
+    {
+        get => _activeAlarmCount;
+        set
+        {
+            if (SetProperty(ref _activeAlarmCount, value))
+            {
+                AlarmBadgeVisibility = value > 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            }
+        }
+    }
+
+    private System.Windows.Visibility _alarmBadgeVisibility = System.Windows.Visibility.Collapsed;
+    /// <summary>报警角标可见性。</summary>
+    public System.Windows.Visibility AlarmBadgeVisibility
+    {
+        get => _alarmBadgeVisibility;
+        set => SetProperty(ref _alarmBadgeVisibility, value);
+    }
+
     /// <summary>统一导航命令，参数为视图名称。</summary>
     public DelegateCommand<string> NavigateCommand { get; }
 
     /// <summary>手动关闭通知命令。</summary>
     public DelegateCommand<NotificationMessage> CloseNotificationCommand { get; }
 
-    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator)
+    /// <summary>点击通知命令。</summary>
+    public DelegateCommand<NotificationMessage> NotificationClickCommand { get; }
+
+    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator,
+        AlarmManager alarmManager)
     {
         _regionManager = regionManager;
         _eventAggregator = eventAggregator;
+        _alarmManager = alarmManager;
 
         NavigateCommand = new DelegateCommand<string>(page =>
         {
@@ -75,11 +105,87 @@ public class MainWindowViewModel : BindableBase
                 Notifications.Remove(msg);
         });
 
+        NotificationClickCommand = new DelegateCommand<NotificationMessage>(msg =>
+        {
+            if (msg == null) return;
+
+            // 移除通知
+            if (Notifications.Contains(msg))
+                Notifications.Remove(msg);
+
+            // 如果有导航目标，跳转到对应页面
+            if (!string.IsNullOrEmpty(msg.NavigateTo))
+            {
+                NavigateCommand.Execute(msg.NavigateTo);
+            }
+        });
+
         // 订阅全局通知事件
         _eventAggregator.GetEvent<NotificationEvent>().Subscribe(OnNotificationReceived);
 
+        // 订阅报警事件
+        _alarmManager.AlarmTriggered += OnAlarmTriggered;
+        _alarmManager.AlarmCleared += OnAlarmCleared;
+
         IsConnected = true;
         StatusMessage = "📍 首页 — 已就绪";
+
+        // 加载当前活跃报警数
+        ActiveAlarmCount = _alarmManager.GetActiveAlarms().Count;
+    }
+
+    /// <summary>
+    /// 处理报警触发事件 — 显示全局通知。
+    /// </summary>
+    private void OnAlarmTriggered(object? sender, AlarmEventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            ActiveAlarmCount = _alarmManager.GetActiveAlarms().Count;
+
+            // 创建通知消息
+            var notificationType = e.Record.Severity switch
+            {
+                AlarmSeverity.Critical => NotificationType.Error,
+                AlarmSeverity.Warning => NotificationType.Warning,
+                _ => NotificationType.Info
+            };
+
+            var notification = new NotificationMessage
+            {
+                Title = e.Record.Title,
+                Message = $"{e.Record.TagName}: {e.Record.Message}",
+                Type = notificationType,
+                DurationMs = 0,  // 报警通知不自动消失，需要手动关闭或点击
+                NavigateTo = "AlarmRecord"  // 点击跳转到报警日志
+            };
+
+            Notifications.Add(notification);
+
+            // 自动消失
+            if (notification.DurationMs > 0)
+            {
+                _ = Task.Delay(notification.DurationMs).ContinueWith(_ =>
+                {
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        if (Notifications.Contains(notification))
+                            Notifications.Remove(notification);
+                    });
+                });
+            }
+        });
+    }
+
+    /// <summary>
+    /// 处理报警清除事件。
+    /// </summary>
+    private void OnAlarmCleared(object? sender, AlarmEventArgs e)
+    {
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            ActiveAlarmCount = _alarmManager.GetActiveAlarms().Count;
+        });
     }
 
     private void OnNotificationReceived(NotificationMessage message)

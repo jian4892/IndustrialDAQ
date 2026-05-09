@@ -2,6 +2,8 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using IndustrialDAQ.Acquisition;
+using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Storage;
 using IndustrialDAQ.UI.Models;
 using LiveChartsCore;
@@ -21,6 +23,7 @@ public class DashboardViewModel : BindableBase, IDestructible
 {
     private readonly RealTimeStore _realTimeStore;
     private readonly AcquisitionHost _acquisitionHost;
+    private readonly AlarmManager _alarmManager;
     private CancellationTokenSource? _cts;
 
     // ─── 顶部属性 ───
@@ -85,19 +88,32 @@ public class DashboardViewModel : BindableBase, IDestructible
     /// <summary>
     /// 初始化仪表板 ViewModel。
     /// </summary>
-    public DashboardViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost)
+    public DashboardViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost,
+        AlarmManager alarmManager)
     {
         _realTimeStore = realTimeStore ?? throw new ArgumentNullException(nameof(realTimeStore));
         _acquisitionHost = acquisitionHost ?? throw new ArgumentNullException(nameof(acquisitionHost));
+        _alarmManager = alarmManager ?? throw new ArgumentNullException(nameof(alarmManager));
         _cts = new CancellationTokenSource();
 
+        // 订阅报警事件
+        _alarmManager.AlarmTriggered += OnAlarmTriggered;
+        _alarmManager.AlarmCleared += OnAlarmCleared;
+        _alarmManager.ActiveAlarmsChanged += OnActiveAlarmsChanged;
+
         InitializeMockData();
+        LoadActiveAlarms();
         StartClock(_cts.Token);
     }
 
     /// <inheritdoc />
     public void Destroy()
     {
+        // 取消订阅报警事件
+        _alarmManager.AlarmTriggered -= OnAlarmTriggered;
+        _alarmManager.AlarmCleared -= OnAlarmCleared;
+        _alarmManager.ActiveAlarmsChanged -= OnActiveAlarmsChanged;
+
         _cts?.Cancel();
         _cts?.Dispose();
     }
@@ -107,8 +123,7 @@ public class DashboardViewModel : BindableBase, IDestructible
         // 顶部卡片数据
         TotalYield = 3847;
         YieldRate = 98.2;
-        EnergyConsumption = 12450.5; // 用具体数字替代省略号
-        AlarmCount = 2;
+        EnergyConsumption = 12450.5;
 
         // 初始化工位
         var colorGreen = new SolidColorPaint(SKColor.Parse("#10B981")) { StrokeThickness = 2 };
@@ -185,11 +200,71 @@ public class DashboardViewModel : BindableBase, IDestructible
             IsLast = true
         });
 
-        // 实时报警栏
-        RealTimeAlarms.Add("[08:45:10] 贴标站-PLC1 通信中断 (Unack)");
-        RealTimeAlarms.Add("[08:42:33] 封盖站 等待物料补给 (Ack)");
-        RealTimeAlarms.Add("[08:29:45] 进瓶区状态 正常 (Ack)");
-        RealTimeAlarms.Add("[08:29:45] 灌装站状态 正常 (Ack)");
+        // 实时报警栏（由 LoadActiveAlarms 填充真实数据）
+    }
+
+    /// <summary>
+    /// 加载当前活跃报警到实时报警栏。
+    /// </summary>
+    private void LoadActiveAlarms()
+    {
+        var activeAlarms = _alarmManager.GetActiveAlarms();
+        RealTimeAlarms.Clear();
+        foreach (var alarm in activeAlarms)
+        {
+            string statusLabel = alarm.Status == AlarmStatus.Active ? "Unack" : "Ack";
+            RealTimeAlarms.Add($"[{alarm.OccurredAt.ToLocalTime():HH:mm:ss}] {alarm.Title} ({statusLabel})");
+        }
+        AlarmCount = activeAlarms.Count;
+    }
+
+    /// <summary>
+    /// 报警触发事件 — 添加到实时报警栏。
+    /// </summary>
+    private void OnAlarmTriggered(object? sender, AlarmEventArgs e)
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            string statusLabel = e.Record.Status == AlarmStatus.Active ? "Unack" : "Ack";
+            string alarmText = $"[{e.Record.OccurredAt.ToLocalTime():HH:mm:ss}] {e.Record.Title} ({statusLabel})";
+
+            // 避免重复添加相同报警
+            if (!RealTimeAlarms.Any(a => a.Contains(e.Record.Title)))
+            {
+                RealTimeAlarms.Insert(0, alarmText);
+            }
+
+            AlarmCount = _alarmManager.GetActiveAlarms().Count;
+        });
+    }
+
+    /// <summary>
+    /// 报警恢复事件 — 从实时报警栏移除。
+    /// </summary>
+    private void OnAlarmCleared(object? sender, AlarmEventArgs e)
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            // 移除匹配的报警条目
+            var toRemove = RealTimeAlarms.FirstOrDefault(a => a.Contains(e.Record.Title));
+            if (toRemove != null)
+            {
+                RealTimeAlarms.Remove(toRemove);
+            }
+
+            AlarmCount = _alarmManager.GetActiveAlarms().Count;
+        });
+    }
+
+    /// <summary>
+    /// 实时报警列表变更 — 同步刷新计数。
+    /// </summary>
+    private void OnActiveAlarmsChanged(object? sender, EventArgs e)
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            AlarmCount = _alarmManager.GetActiveAlarms().Count;
+        });
     }
 
     private async void StartClock(CancellationToken ct)

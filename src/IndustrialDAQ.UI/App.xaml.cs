@@ -1,9 +1,7 @@
 // File: App.xaml.cs  Module: UI (Composition Root)  Author: IndustrialDAQ Team
-using System.IO;
-using System.Text.Json;
-using System.Windows;
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Acquisition.Mocks;
+using IndustrialDAQ.Alarm;
 using IndustrialDAQ.Core;
 using IndustrialDAQ.Core.Configuration;
 using IndustrialDAQ.Core.Interfaces;
@@ -19,6 +17,10 @@ using Prism.DryIoc;
 using Prism.Ioc;
 using Prism.Navigation.Regions;
 using Serilog;
+using Serilog.Events;
+using System.IO;
+using System.Text.Json;
+using System.Windows;
 
 namespace IndustrialDAQ.UI;
 
@@ -40,6 +42,15 @@ public partial class App : PrismApplication
         containerRegistry.RegisterSingleton<HistoryWriter>();
         containerRegistry.RegisterSingleton<MainWindowViewModel>();
 
+        // 报警系统服务
+        containerRegistry.RegisterSingleton<AlarmEventBus>();
+        containerRegistry.RegisterSingleton<AlarmEngine>();
+        containerRegistry.RegisterSingleton<AlarmHistoryRepository>();
+        containerRegistry.RegisterSingleton<AlarmManager>();
+
+        // ViewModel 注册（支持构造函数注入）
+        containerRegistry.Register<AlarmRecordViewModel>();
+
         containerRegistry.RegisterForNavigation<DashboardView>();
         containerRegistry.RegisterForNavigation<ProductionMonitorView>();
         containerRegistry.RegisterForNavigation<DeviceDetailView>();
@@ -56,10 +67,20 @@ public partial class App : PrismApplication
         var services = new ServiceCollection();
 
         Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
+            .MinimumLevel.Information()  // 全局 Information
+            .MinimumLevel.Override("IndustrialDAQ", LogEventLevel.Debug)  // 项目代码保持 Debug
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Query", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.ChangeTracking", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Update", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Migrations", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Model", LogEventLevel.Warning)
             .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
-        services.AddLogging(builder => builder.AddSerilog());
+        services.AddLogging(builder => {
+            builder.AddSerilog();
+        });
 
         services.AddDbContextFactory<DaqDbContext>(options =>
             options.UseSqlite("Data Source=industrialdaq.db"));
@@ -77,7 +98,7 @@ public partial class App : PrismApplication
         var dbFactory = Container.Resolve<IDbContextFactory<DaqDbContext>>();
         using (var db = dbFactory.CreateDbContext())
         {
-            db.Database.EnsureCreated();
+            db.Database.EnsureCreated();           
         }
 
         // ── 注册所有协议驱动 ──
@@ -114,12 +135,111 @@ public partial class App : PrismApplication
         _ = acquisitionHost.StartAsync(CancellationToken.None);
         _ = historyWriter.StartAsync(CancellationToken.None);
 
+        // ── 启动报警系统 ──
+        var alarmEngine = Container.Resolve<AlarmEngine>();
+        var alarmManager = Container.Resolve<AlarmManager>();
+        _ = alarmEngine.StartAsync(CancellationToken.None);
+        _ = alarmManager.StartAsync(CancellationToken.None);
+
+        // ── 注册测试报警规则 ──
+        RegisterTestAlarmRules(alarmManager);
+
         // ── 加载 JSON 配置并启动设备 ──
         _ = LoadAndStartDevicesAsync(acquisitionHost, historyWriter);
 
         // ── 导航到仪表板 ──
         var regionManager = Container.Resolve<IRegionManager>();
         regionManager.RequestNavigate("MainRegion", nameof(DashboardView));
+    }
+
+    /// <summary>
+    /// 注册测试报警规则 — 用于开发调试。
+    /// TagId 匹配 production-line.json 中的实际配置。
+    /// </summary>
+    private void RegisterTestAlarmRules(AlarmManager alarmManager)
+    {
+        var rules = new[]
+        {
+            // ═══ S7-1500 PLC (OpcUA) 报警规则 ═══
+
+            // 高限报警 — 灌装液位达到或超过 700 mL
+            new AlarmRule
+            {
+                RuleId = "alm-fill-high",
+                TagId = "tag-filling-actuallevel",
+                TagName = "Filling.ActualLevel",
+                AlarmType = AlarmType.High,
+                Threshold = 699.0,  // >= 700 报警（使用 699 配合 > 判断）
+                Hysteresis = 30.0,  // 报警后需降到 670 以下才恢复
+                Severity = AlarmSeverity.Warning,
+                Title = "灌装液位偏高",
+                MessageTemplate = "灌装液位 {Value} mL 达到警戒线",
+                Source = "灌装产线 S7-1500",
+                CooldownSeconds = 60  // 60秒冷却，防止重复报警
+            },
+            // 高高限报警 — 灌装液位达到或超过 800 mL（溢出风险）
+            new AlarmRule
+            {
+                RuleId = "alm-fill-highhigh",
+                TagId = "tag-filling-actuallevel",
+                TagName = "Filling.ActualLevel",
+                AlarmType = AlarmType.HighHigh,
+                Threshold = 799.0,  // >= 800 报警
+                HighHighThreshold = 799.0,
+                Hysteresis = 30.0,  // 报警后需降到 770 以下才恢复
+                Severity = AlarmSeverity.Critical,
+                Title = "灌装液位超高（溢出风险）",
+                MessageTemplate = "灌装液位 {Value} mL 超过高高限，有溢出风险！",
+                Source = "灌装产线 S7-1500",
+                CooldownSeconds = 60  // 60秒冷却，防止重复报警
+            },
+            // 高限报警 — 传送速度超过 25 m/min
+            new AlarmRule
+            {
+                RuleId = "alm-speed-high",
+                TagId = "tag-conveyor-actualspeed",
+                TagName = "Conveyor.ActualSpeed",
+                AlarmType = AlarmType.High,
+                Threshold = 25.0,
+                Hysteresis = 2.0,  // >25 报警, <23 恢复
+                Severity = AlarmSeverity.Warning,
+                Title = "传送速度偏高",
+                MessageTemplate = "传送速度 {Value} m/min 超过 {Threshold} m/min",
+                Source = "灌装产线 S7-1500",
+                CooldownSeconds = 15
+            },
+            // 低限报警 — 传送速度低于 5 m/min
+            new AlarmRule
+            {
+                RuleId = "alm-speed-low",
+                TagId = "tag-conveyor-actualspeed",
+                TagName = "Conveyor.ActualSpeed",
+                AlarmType = AlarmType.Low,
+                Threshold = 5.0,
+                Hysteresis = 2.0,  // <5 报警, >7 恢复
+                Severity = AlarmSeverity.Warning,
+                Title = "传送速度偏低",
+                MessageTemplate = "传送速度 {Value} m/min 低于 {Threshold} m/min",
+                Source = "灌装产线 S7-1500",
+                CooldownSeconds = 15
+            },
+            // 布尔报警 — 急停按钮触发
+            new AlarmRule
+            {
+                RuleId = "alm-estop",
+                TagId = "tag-line-estop",
+                TagName = "Line.EStop",
+                AlarmType = AlarmType.Bool,
+                Severity = AlarmSeverity.Critical,
+                Title = "急停按钮已触发",
+                MessageTemplate = "产线急停按钮已按下，请立即检查！",
+                Source = "灌装产线 S7-1500",
+                CooldownSeconds = 5
+            }
+        };
+
+        alarmManager.RegisterRules(rules);
+        Log.Information("已注册 {Count} 条测试报警规则", rules.Length);
     }
 
     /// <summary>

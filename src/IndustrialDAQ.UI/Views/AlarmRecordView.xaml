@@ -116,11 +116,11 @@
                     </TextBox.Resources>
                 </TextBox>
 
-                <!-- 确认全部按钮 -->
-                <Button Grid.Column="3" Content="✅ 确认全部"
-                        Command="{Binding AcknowledgeAllCommand}"
-                        Width="90" Height="28" Margin="0,0,8,0"
-                        Background="{DynamicResource SuccessBrush}"
+                <!-- 刷新按钮 -->
+                <Button Grid.Column="3" Content="🔄 刷新"
+                        Command="{Binding RefreshCommand}"
+                        Width="70" Height="28" Margin="0,0,8,0"
+                        Background="{DynamicResource InfoBrush}"
                         Foreground="{DynamicResource TextPrimaryBrush}"
                         BorderThickness="0">
                     <Button.Resources>
@@ -130,12 +130,13 @@
                     </Button.Resources>
                 </Button>
 
-                <!-- 导出按钮 -->
-                <Button Grid.Column="4" Content="📥 导出" Width="70" Height="28"
-                        Background="{DynamicResource BrushBgTertiary}"
-                        Foreground="{DynamicResource TextSecondaryBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1">
+                <!-- 确认全部按钮 -->
+                <Button Grid.Column="4" Content="✅ 确认全部"
+                        Command="{Binding AcknowledgeAllCommand}"
+                        Width="90" Height="28" Margin="0,0,8,0"
+                        Background="{DynamicResource SuccessBrush}"
+                        Foreground="{DynamicResource TextPrimaryBrush}"
+                        BorderThickness="0">
                     <Button.Resources>
                         <Style TargetType="Border">
                             <Setter Property="CornerRadius" Value="4"/>

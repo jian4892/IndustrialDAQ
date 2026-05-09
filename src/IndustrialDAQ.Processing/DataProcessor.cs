@@ -96,7 +96,8 @@ public sealed class DataProcessor : IHostedService
     {
         try
         {
-            await foreach (TagValue value in _store.ChangeStream.ReadAllAsync(ct).ConfigureAwait(false))
+            var reader = _store.Subscribe();
+            await foreach (TagValue value in reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 ct.ThrowIfCancellationRequested();
 
