@@ -1,4 +1,5 @@
 // File: AlarmHistoryRepository.cs  Module: Storage  Author: IndustrialDAQ Team
+using System.Data;
 using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Infrastructure;
 using IndustrialDAQ.Infrastructure.Entities;
@@ -68,14 +69,19 @@ public sealed class AlarmHistoryRepository
         try
         {
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+            // 先用 EF Core 更新
             var entity = await context.AlarmHistories
                 .FirstOrDefaultAsync(e => e.AlarmId == alarmId, cancellationToken);
 
             if (entity is null)
             {
-                _logger.LogWarning("报警记录不存在: {AlarmId}", alarmId);
+                _logger.LogWarning("报警记录不存在，无法更新: AlarmId={AlarmId}, 目标状态={Status}", alarmId, status);
                 return;
             }
+
+            _logger.LogInformation("找到报警记录: AlarmId={AlarmId}, 当前状态={CurrentStatus}, 目标状态={TargetStatus}",
+                alarmId, entity.Status, status);
 
             entity.Status = status;
             if (acknowledgedAt.HasValue)
@@ -83,12 +89,47 @@ public sealed class AlarmHistoryRepository
             if (clearedAt.HasValue)
                 entity.ClearedAt = clearedAt.Value;
 
-            await context.SaveChangesAsync(cancellationToken);
-            _logger.LogDebug("报警记录状态已更新: {AlarmId} -> {Status}", alarmId, status);
+            int affected = await context.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("EF Core 更新完成: AlarmId={AlarmId}, Status={Status}, 受影响行数={Affected}",
+                alarmId, status, affected);
+
+            // 如果 EF Core 更新行数为 0，使用原始 SQL 作为保底
+            if (affected == 0)
+            {
+                _logger.LogWarning("EF Core 更新 0 行，使用原始 SQL 保底更新: AlarmId={AlarmId}", alarmId);
+                await using var conn = context.Database.GetDbConnection();
+                if (conn.State != System.Data.ConnectionState.Open)
+                    await conn.OpenAsync(cancellationToken);
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE AlarmHistories SET Status = @Status WHERE AlarmId = @AlarmId";
+                var pStatus = cmd.CreateParameter();
+                pStatus.ParameterName = "@Status";
+                pStatus.Value = (int)status;
+                cmd.Parameters.Add(pStatus);
+                var pAlarmId = cmd.CreateParameter();
+                pAlarmId.ParameterName = "@AlarmId";
+                pAlarmId.Value = alarmId;
+                cmd.Parameters.Add(pAlarmId);
+
+                int sqlAffected = await cmd.ExecuteNonQueryAsync(cancellationToken);
+                _logger.LogInformation("原始 SQL 更新完成: AlarmId={AlarmId}, 受影响行数={Affected}", alarmId, sqlAffected);
+            }
+
+            // 验证更新结果
+            await using var verifyContext = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var verifyEntity = await verifyContext.AlarmHistories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.AlarmId == alarmId, cancellationToken);
+            if (verifyEntity is not null)
+            {
+                _logger.LogInformation("验证数据库状态: AlarmId={AlarmId}, 数据库实际状态={DbStatus}, ClearedAt={ClearedAt}",
+                    alarmId, verifyEntity.Status, verifyEntity.ClearedAt);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "更新报警记录状态失败: {AlarmId}", alarmId);
+            _logger.LogError(ex, "更新报警记录状态失败: AlarmId={AlarmId}", alarmId);
             throw;
         }
     }

@@ -145,7 +145,7 @@ public class AlarmRecordViewModel : BindableBase
     }
 
     /// <summary>
-    /// 处理报警恢复事件。
+    /// 处理报警恢复事件 — 更新状态为"已清除"而非移除。
     /// </summary>
     private void OnAlarmCleared(object? sender, AlarmEventArgs e)
     {
@@ -154,7 +154,7 @@ public class AlarmRecordViewModel : BindableBase
             var existingItem = Alarms.FirstOrDefault(a => a.Id == e.Record.Id);
             if (existingItem is not null)
             {
-                Alarms.Remove(existingItem);
+                existingItem.Status = "已清除";
                 ApplyFilter();
             }
         });

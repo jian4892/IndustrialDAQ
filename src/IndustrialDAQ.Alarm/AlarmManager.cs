@@ -200,6 +200,9 @@ public sealed class AlarmManager : IHostedService
     {
         var record = alarmEvent.Record;
 
+        _logger.LogInformation("处理报警事件: AlarmId={AlarmId}, EventType={EventType}, RuleId={RuleId}",
+            alarmEvent.AlarmId, alarmEvent.EventType, alarmEvent.Rule.RuleId);
+
         switch (alarmEvent.EventType)
         {
             case AlarmEventType.Triggered:
@@ -211,12 +214,14 @@ public sealed class AlarmManager : IHostedService
                 if (existingAlarm is not null)
                 {
                     // 已存在活跃报警，不创建新记录，只触发UI刷新
+                    _logger.LogDebug("已存在活跃报警 {AlarmId}，跳过重复保存", existingAlarm.Id);
                     AlarmTriggered?.Invoke(this, new AlarmEventArgs(existingAlarm));
                 }
                 else
                 {
                     // 新报警，添加到实时列表并保存到数据库
                     _activeAlarms[alarmEvent.AlarmId] = record;
+                    _logger.LogInformation("保存新报警到数据库: AlarmId={AlarmId}", alarmEvent.AlarmId);
                     await _repository.SaveAsync(record, alarmEvent.Rule.AlarmType, ct);
                     AlarmTriggered?.Invoke(this, new AlarmEventArgs(record));
                 }
@@ -230,6 +235,7 @@ public sealed class AlarmManager : IHostedService
                     ackedAlarm.AcknowledgedAt = alarmEvent.Timestamp;
                 }
                 // 更新数据库
+                _logger.LogInformation("更新报警为已确认: AlarmId={AlarmId}", alarmEvent.AlarmId);
                 await _repository.UpdateStatusAsync(alarmEvent.AlarmId,
                     AlarmStatus.Acknowledged, alarmEvent.Timestamp, null, ct);
                 // 触发事件
@@ -238,10 +244,19 @@ public sealed class AlarmManager : IHostedService
 
             case AlarmEventType.Cleared:
                 // 从实时列表移除
-                _activeAlarms.TryRemove(alarmEvent.AlarmId, out _);
+                bool removed = _activeAlarms.TryRemove(alarmEvent.AlarmId, out _);
+                _logger.LogInformation("报警清除: AlarmId={AlarmId}, 从活跃列表移除={Removed}", alarmEvent.AlarmId, removed);
                 // 更新数据库
-                await _repository.UpdateStatusAsync(alarmEvent.AlarmId,
-                    AlarmStatus.Cleared, null, alarmEvent.Timestamp, ct);
+                try
+                {
+                    await _repository.UpdateStatusAsync(alarmEvent.AlarmId,
+                        AlarmStatus.Cleared, null, alarmEvent.Timestamp, ct);
+                    _logger.LogInformation("数据库已更新报警状态为已清除: AlarmId={AlarmId}", alarmEvent.AlarmId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "更新数据库报警状态失败: AlarmId={AlarmId}", alarmEvent.AlarmId);
+                }
                 // 触发事件
                 AlarmCleared?.Invoke(this, new AlarmEventArgs(record));
                 break;

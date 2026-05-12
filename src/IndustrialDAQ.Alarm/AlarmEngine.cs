@@ -238,6 +238,26 @@ public sealed class AlarmEngine : IHostedService
                 _ => AlarmEventType.Triggered
             };
 
+            // 每次报警触发生成新的 AlarmId，避免重复
+            string alarmId;
+            if (e.NewState == AlarmState.Active)
+            {
+                alarmId = $"ALM-{Interlocked.Increment(ref _alarmIdCounter):D6}";
+                // 将新 ID 存入实例，供后续 Acknowledged/Normal 复用
+                if (sender is AlarmInstance instance)
+                    instance.CurrentOccurrenceId = alarmId;
+            }
+            else
+            {
+                alarmId = e.AlarmId;
+                // Normal 状态清除事件 ID
+                if (e.NewState == AlarmState.Normal && sender is AlarmInstance instance)
+                    instance.CurrentOccurrenceId = null;
+            }
+
+            _logger.LogInformation("报警状态变化: AlarmId={AlarmId}, {OldState} -> {NewState}, 事件={EventType}, 触发值={Value}",
+                alarmId, e.OldState, e.NewState, eventType, e.TriggerValue);
+
             var alarmStatus = e.NewState switch
             {
                 AlarmState.Active => AlarmStatus.Active,
@@ -251,7 +271,7 @@ public sealed class AlarmEngine : IHostedService
             // 创建报警记录
             var record = new AlarmRecord
             {
-                Id = e.AlarmId,
+                Id = alarmId,
                 RuleId = e.Rule.RuleId,
                 Severity = e.Rule.Severity,
                 Source = e.Rule.Source,
@@ -271,7 +291,7 @@ public sealed class AlarmEngine : IHostedService
             var alarmEvent = new AlarmEvent
             {
                 EventType = eventType,
-                AlarmId = e.AlarmId,
+                AlarmId = alarmId,
                 Rule = e.Rule,
                 Record = record,
                 TriggerValue = e.TriggerValue ?? 0,
@@ -279,7 +299,11 @@ public sealed class AlarmEngine : IHostedService
                 State = e.NewState
             };
 
-            _eventBus.Publish(alarmEvent);
+            bool published = _eventBus.Publish(alarmEvent);
+            if (!published)
+            {
+                _logger.LogWarning("报警事件发布失败: AlarmId={AlarmId}, EventType={EventType}", e.AlarmId, eventType);
+            }
         }
         catch (Exception ex)
         {

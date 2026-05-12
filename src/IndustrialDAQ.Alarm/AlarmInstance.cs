@@ -13,8 +13,11 @@ public sealed class AlarmInstance
     private readonly AlarmStateMachine _stateMachine;
     private readonly object _lock = new();
 
-    /// <summary>报警唯一标识。</summary>
+    /// <summary>报警唯一标识（规则级别，用于内部管理）。</summary>
     public string AlarmId { get; }
+
+    /// <summary>当前报警事件 ID（每次触发生成新 ID，清除后重置）。</summary>
+    public string? CurrentOccurrenceId { get; internal set; }
 
     /// <summary>关联的报警规则。</summary>
     public AlarmRule Rule => _rule;
@@ -88,9 +91,12 @@ public sealed class AlarmInstance
                     break;
             }
 
+            // 使用当前事件 ID（Active 时由 AlarmEngine 设置，其他状态复用）
+            string occurrenceId = CurrentOccurrenceId ?? AlarmId;
+
             // 触发实例状态变化事件
             StateChanged?.Invoke(this, new AlarmInstanceStateChangedEventArgs(
-                AlarmId, _rule, e.OldState, e.NewState,
+                occurrenceId, _rule, e.OldState, e.NewState,
                 e.TriggerValue, e.Timestamp));
         }
     }
