@@ -16,6 +16,18 @@ public sealed class DaqDbContext : DbContext
     /// <summary>报警历史表。</summary>
     public DbSet<AlarmHistoryEntity> AlarmHistories => Set<AlarmHistoryEntity>();
 
+    /// <summary>设备模板表。</summary>
+    public DbSet<DeviceTemplateEntity> DeviceTemplates => Set<DeviceTemplateEntity>();
+
+    /// <summary>数据点模板表。</summary>
+    public DbSet<DataPointTemplateEntity> DataPointTemplates => Set<DataPointTemplateEntity>();
+
+    /// <summary>报警模板表。</summary>
+    public DbSet<AlarmTemplateEntity> AlarmTemplates => Set<AlarmTemplateEntity>();
+
+    /// <summary>趋势模板表。</summary>
+    public DbSet<TrendTemplateEntity> TrendTemplates => Set<TrendTemplateEntity>();
+
     /// <summary>
     /// 使用选项配置（由 DI 注入连接字符串）。
     /// </summary>
@@ -46,6 +58,37 @@ public sealed class DaqDbContext : DbContext
             entity.HasIndex(e => e.OccurredAt);
             // 复合索引：按状态 + 时间查询是最高频场景
             entity.HasIndex(e => new { e.Status, e.OccurredAt });
+        });
+
+        modelBuilder.Entity<DeviceTemplateEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId).IsUnique();
+            entity.HasIndex(e => e.IsBuiltIn);
+        });
+
+        modelBuilder.Entity<DataPointTemplateEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.DeviceTemplateId);
+            entity.HasIndex(e => e.TemplateId);
+            entity.HasOne<DeviceTemplateEntity>()
+                .WithMany()
+                .HasForeignKey(e => e.DeviceTemplateId);
+        });
+
+        modelBuilder.Entity<AlarmTemplateEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId).IsUnique();
+            entity.HasIndex(e => e.IsBuiltIn);
+        });
+
+        modelBuilder.Entity<TrendTemplateEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId).IsUnique();
+            entity.HasIndex(e => e.IsBuiltIn);
         });
     }
 }

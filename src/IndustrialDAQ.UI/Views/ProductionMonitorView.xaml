@@ -196,6 +196,8 @@
                                             LegendPosition="Bottom"
                                             LegendTextSize="12"
                                             LegendTextPaint="{Binding LegendPaint}"
+                                            AnimationsSpeed="00:00:00.15"
+                                            ZoomMode="X"
                                             Margin="0,4"/>
                     </Grid>
                 </Border>
@@ -226,17 +228,6 @@
                                                     Width="80"/>
                                 <DataGridTextColumn Header="时间戳" Binding="{Binding Timestamp}"
                                                     Width="120"/>
-                                <!-- 动态展示列 -->
-                                <DataGridTemplateColumn Header="图表展示" Width="110" CanUserResize="False">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <CheckBox Content="趋势" IsChecked="{Binding IsTrendSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                <CheckBox Content="仪表" IsChecked="{Binding IsGaugeSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNumeric}" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
                                 <!-- 数据写入列 -->
                                 <DataGridTemplateColumn Header="操作" Width="100" CanUserResize="False">
                                     <DataGridTemplateColumn.CellTemplate>

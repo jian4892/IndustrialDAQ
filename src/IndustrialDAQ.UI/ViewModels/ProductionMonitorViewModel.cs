@@ -4,6 +4,7 @@ using System.Windows;
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Storage;
+using IndustrialDAQ.Trend;
 using IndustrialDAQ.UI.Models;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
@@ -14,7 +15,6 @@ using Prism.Events;
 using Prism.Mvvm;
 using SkiaSharp;
 using IndustrialDAQ.UI.Events;
-using System.ComponentModel;
 
 namespace IndustrialDAQ.UI.ViewModels;
 
@@ -26,11 +26,10 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     private readonly RealTimeStore _realTimeStore;
     private readonly AcquisitionHost _acquisitionHost;
     private readonly IDialogService _dialogService;
+    private readonly TrendEngine _trendEngine;
     private CancellationTokenSource? _cts;
     private readonly Dictionary<string, TagDisplayItem> _itemLookup = new();
-    private readonly Dictionary<string, LineSeries<ObservablePoint>> _allSeries = new(); // TagId -> Series
-    private readonly Dictionary<string, double> _seriesMaxValues = new(); // TagId -> max value observed
-    private readonly Dictionary<string, (bool isTrend, bool isGauge)> _selectionCache = new(); // DeviceId_TagId -> Cache
+    private readonly Dictionary<string, LineSeries<ObservablePoint>> _trendSeriesMap = new();
 
     // ─── 设备选择 ───
 
@@ -76,6 +75,9 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     /// <summary>趋势图系列集合。</summary>
     public ObservableCollection<ISeries> TrendSeries { get; } = new();
 
+    /// <summary>报警线系列（水平线）。</summary>
+    public ObservableCollection<ISeries> AlarmLineSeries { get; } = new();
+
     /// <summary>图例字体画刷。</summary>
     public SolidColorPaint LegendPaint { get; }
 
@@ -96,11 +98,13 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     public DelegateCommand NavigateBackCommand { get; }
     public DelegateCommand<TagDisplayItem> WriteTagCommand { get; }
 
-    public ProductionMonitorViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost, IEventAggregator eventAggregator, IDialogService dialogService)
+    public ProductionMonitorViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost,
+        IEventAggregator eventAggregator, IDialogService dialogService, TrendEngine trendEngine)
     {
         _realTimeStore = realTimeStore ?? throw new ArgumentNullException(nameof(realTimeStore));
         _acquisitionHost = acquisitionHost ?? throw new ArgumentNullException(nameof(acquisitionHost));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _trendEngine = trendEngine ?? throw new ArgumentNullException(nameof(trendEngine));
         _eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
         // 订阅配置重载事件
         eventAggregator.GetEvent<ConfigurationReloadedEvent>().Subscribe(LoadDevices);
@@ -159,6 +163,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
         NavigateBackCommand = new DelegateCommand(() => { });
         WriteTagCommand = new DelegateCommand<TagDisplayItem>(OnWriteTag);
 
+        // 订阅趋势引擎刷新事件
+        _trendEngine.DataRefreshed += OnTrendDataRefreshed;
+
+        // 初始化趋势曲线（来自 TrendEngine 已注册的 Tag）
+        InitializeTrendSeries();
+
         // 延迟加载设备列表（等待 AcquisitionHost 初始化完成）
         _cts = new CancellationTokenSource();
         _ = SubscribeToRealtimeDataAsync(_cts.Token);
@@ -186,39 +196,15 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
 
     private void OnDeviceSelected(DeviceConfig device)
     {
-        foreach (var item in TagTable)
-            item.PropertyChanged -= TagDisplayItem_PropertyChanged;
-
         TagTable.Clear();
         _itemLookup.Clear();
-        _allSeries.Clear();
-        _seriesMaxValues.Clear();
-        TrendSeries.Clear();
         Gauges.Clear();
 
-        var colors = new[]
-        {
-            new SolidColorPaint(new SKColor(0xEF, 0x44, 0x44)) { StrokeThickness = 2 },
-            new SolidColorPaint(new SKColor(0x3B, 0x82, 0xF6)) { StrokeThickness = 2 },
-            new SolidColorPaint(new SKColor(0x10, 0xB9, 0x81)) { StrokeThickness = 2 },
-            new SolidColorPaint(new SKColor(0xF5, 0x9E, 0x0B)) { StrokeThickness = 2 },
-            new SolidColorPaint(new SKColor(0x8B, 0x5C, 0xF6)) { StrokeThickness = 2 },
-        };
+        var driver = _acquisitionHost.GetDriver(device.Id);
+        bool isConnected = driver?.IsConnected ?? false;
 
-        int colorIdx = 0;
         foreach (var tag in device.Tags)
         {
-            bool isTrend = false, isGauge = false;
-            string cacheKey = $"{device.Id}_{tag.Id}";
-            if (_selectionCache.TryGetValue(cacheKey, out var cache))
-            {
-                isTrend = cache.isTrend;
-                isGauge = cache.isGauge;
-            }
-
-            var driver = _acquisitionHost.GetDriver(device.Id);
-            bool isConnected = driver?.IsConnected ?? false;
-
             var item = new TagDisplayItem(tag.Id)
             {
                 TagName = tag.Name,
@@ -228,93 +214,20 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                 Description = tag.Description,
                 IsNumeric = IsNumericType(tag.DataType),
                 CanWrite = tag.Access == TagAccess.Write || tag.Access == TagAccess.ReadWrite,
-                IsTrendSelected = isTrend,
-                IsGaugeSelected = isGauge
             };
-            item.PropertyChanged += TagDisplayItem_PropertyChanged;
             _itemLookup[tag.Id] = item;
             TagTable.Add(item);
 
+            // 为所有模拟量 Tag 自动添加仪表
             if (IsNumericType(tag.DataType))
             {
-                var values = new ObservableCollection<ObservablePoint>();
-                var series = new LineSeries<ObservablePoint>
+                Gauges.Add(new GaugeItem(tag.Id)
                 {
-                    Name = string.IsNullOrWhiteSpace(tag.Description) ? tag.Name : tag.Description,
-                    Values = values,
-                    Stroke = colors[colorIdx % colors.Length],
-                    Fill = null,
-                    GeometrySize = 0,
-                    LineSmoothness = 0
-                };
-                _allSeries[tag.Id] = series;
-                colorIdx++;
-
-                if (isTrend)
-                {
-                    TrendSeries.Add(series);
-                }
-
-                if (isGauge)
-                {
-                    Gauges.Add(new GaugeItem(item.TagId)
-                    {
-                        Label = string.IsNullOrWhiteSpace(item.Description) ? item.TagName : item.Description,
-                        Value = 0,
-                        GaugeColor = "#3B82F6",
-                        MaxValue = 100 // 可以根据实际需求调整
-                    });
-                }
-            }
-        }
-
-        EvaluateYAxes();
-    }
-
-    private void TagDisplayItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (sender is not TagDisplayItem item) return;
-
-        if (e.PropertyName == nameof(TagDisplayItem.IsTrendSelected))
-        {
-            if (_selectedDevice != null)
-                _selectionCache[$"{_selectedDevice.Id}_{item.TagId}"] = (item.IsTrendSelected, item.IsGaugeSelected);
-
-            if (_allSeries.TryGetValue(item.TagId, out var series))
-            {
-                if (item.IsTrendSelected && !TrendSeries.Contains(series))
-                {
-                    TrendSeries.Add(series);
-                }
-                else if (!item.IsTrendSelected && TrendSeries.Contains(series))
-                {
-                    TrendSeries.Remove(series);
-                }
-                EvaluateYAxes();
-            }
-        }
-        else if (e.PropertyName == nameof(TagDisplayItem.IsGaugeSelected))
-        {
-            if (_selectedDevice != null)
-                _selectionCache[$"{_selectedDevice.Id}_{item.TagId}"] = (item.IsTrendSelected, item.IsGaugeSelected);
-
-            if (item.IsGaugeSelected)
-            {
-                if (!Gauges.Any(g => g.TagId == item.TagId))
-                {
-                    Gauges.Add(new GaugeItem(item.TagId)
-                    {
-                        Label = string.IsNullOrWhiteSpace(item.Description) ? item.TagName : item.Description,
-                        Value = double.TryParse(item.Value, out double v) ? v : 0,
-                        GaugeColor = "#3B82F6",
-                        MaxValue = 100 // Can be customized per tag
-                    });
-                }
-            }
-            else
-            {
-                var g = Gauges.FirstOrDefault(x => x.TagId == item.TagId);
-                if (g != null) Gauges.Remove(g);
+                    Label = string.IsNullOrWhiteSpace(tag.Description) ? tag.Name : tag.Description,
+                    Value = 0,
+                    GaugeColor = "#3B82F6",
+                    MaxValue = 100
+                });
             }
         }
     }
@@ -408,6 +321,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     /// <inheritdoc />
     public void Destroy()
     {
+        _trendEngine.DataRefreshed -= OnTrendDataRefreshed;
         _cts?.Cancel();
         _cts?.Dispose();
     }
@@ -426,7 +340,6 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                 Application.Current?.Dispatcher.Invoke(() =>
                 {
                     UpdateGaugeFromTag(value);
-                    UpdateChartFromTag(value);
                     UpdateDataTable(value);
                     UpdateAlarmStatus(value);
                 });
@@ -448,76 +361,81 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
         }
     }
 
-    private void UpdateChartFromTag(TagValue value)
+    /// <summary>
+    /// 初始化趋势曲线 — 从 TrendEngine 的已注册 Tag 创建 Series。
+    /// </summary>
+    private void InitializeTrendSeries()
     {
-        if (value.Value is null || value.Quality == Quality.Bad) return;
-        
-        double val;
-        try { val = Convert.ToDouble(value.Value); } catch { return; }
+        var colors = new[] { "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6" };
+        int colorIdx = 0;
 
-        if (_allSeries.TryGetValue(value.TagId, out var series))
+        foreach (var tagId in _trendEngine.DataStore.TrackedTagIds)
         {
-            var values = (ObservableCollection<ObservablePoint>)series.Values!;
-            double x = value.Timestamp.LocalDateTime.Ticks;
-            values.Add(new ObservablePoint(x, val));
+            var template = _trendEngine.DataStore.GetTemplate(tagId);
+            string color = template?.LineColor ?? colors[colorIdx % colors.Length];
+            string name = template?.Name ?? tagId.Replace("tag-", "").Replace("-", ".");
 
-            while (values.Count > 120)
-                values.RemoveAt(0);
-
-            double currentMax = _seriesMaxValues.GetValueOrDefault(value.TagId, 0);
-            if (val > currentMax)
+            var series = new LineSeries<ObservablePoint>
             {
-                _seriesMaxValues[value.TagId] = val;
-                if (TrendSeries.Contains(series))
+                Name = name,
+                Values = new ObservableCollection<ObservablePoint>(),
+                Stroke = new SolidColorPaint(SKColor.Parse(color)) { StrokeThickness = (float)(template?.StrokeThickness ?? 2) },
+                Fill = null,
+                GeometrySize = template?.ShowGeometry == true ? 6 : 0,
+                LineSmoothness = 0
+            };
+
+            _trendSeriesMap[tagId] = series;
+            TrendSeries.Add(series);
+            colorIdx++;
+        }
+
+        // 添加报警线
+        foreach (var line in _trendEngine.AlarmLines)
+        {
+            AlarmLineSeries.Add(new LineSeries<ObservablePoint>
+            {
+                Name = line.Label,
+                Values = new ObservableCollection<ObservablePoint>
                 {
-                    EvaluateYAxes();
-                }
-            }
+                    new(TrendXAxes[0].MinLimit ?? 0, line.Value),
+                    new(TrendXAxes[0].MaxLimit ?? DateTime.UtcNow.Ticks, line.Value)
+                },
+                Stroke = new SolidColorPaint(SKColor.Parse(line.Color)) { StrokeThickness = 1 },
+                Fill = null,
+                GeometrySize = 0,
+                ScalesYAt = 0
+            });
         }
     }
 
-    private void EvaluateYAxes()
+    /// <summary>
+    /// 趋势引擎刷新回调 — 从 TrendCache 读取数据更新图表。
+    /// </summary>
+    private void OnTrendDataRefreshed()
     {
-        if (TrendSeries.Count <= 1)
+        Application.Current?.Dispatcher.Invoke(() =>
         {
-            foreach (var s in TrendSeries.Cast<LineSeries<ObservablePoint>>()) s.ScalesYAt = 0;
-            if (TrendYAxes.Length > 1) TrendYAxes[1].IsVisible = false;
-            return;
-        }
+            var windowSeconds = 300; // 默认 5 分钟窗口
 
-        var seriesMaxes = TrendSeries.Cast<LineSeries<ObservablePoint>>().Select(s => 
-        {
-            string tagId = _allSeries.FirstOrDefault(x => x.Value == s).Key ?? string.Empty;
-            double max = _seriesMaxValues.GetValueOrDefault(tagId, 0);
-            return new { Series = s, Max = max };
-        }).ToList();
-
-        double overallMax = seriesMaxes.Max(x => x.Max);
-        double overallMinMax = seriesMaxes.Min(x => x.Max);
-
-        if (overallMax > 0 && overallMinMax > 0 && overallMax / overallMinMax >= 10)
-        {
-            double threshold = overallMax / 5.0; 
-            bool hasRightAxis = false;
-            foreach (var sm in seriesMaxes)
+            foreach (var (tagId, series) in _trendSeriesMap)
             {
-                if (sm.Max >= threshold)
-                {
-                    sm.Series.ScalesYAt = 1;
-                    hasRightAxis = true;
-                }
-                else
-                {
-                    sm.Series.ScalesYAt = 0;
-                }
+                if (series.Values is not ObservableCollection<ObservablePoint> values) continue;
+
+                var cache = _trendEngine.DataStore.GetCache(tagId);
+                if (cache is null) continue;
+
+                var template = _trendEngine.DataStore.GetTemplate(tagId);
+                windowSeconds = template?.WindowSeconds ?? windowSeconds;
+
+                var points = cache.GetWindow(windowSeconds);
+                if (points.Length == 0) continue;
+
+                values.Clear();
+                foreach (var p in points)
+                    values.Add(new ObservablePoint(p.Timestamp.Ticks, p.Value));
             }
-            if (TrendYAxes.Length > 1) TrendYAxes[1].IsVisible = hasRightAxis;
-        }
-        else
-        {
-            foreach (var s in TrendSeries.Cast<LineSeries<ObservablePoint>>()) s.ScalesYAt = 0;
-            if (TrendYAxes.Length > 1) TrendYAxes[1].IsVisible = false;
-        }
+        });
     }
 
     private void UpdateDataTable(TagValue value)

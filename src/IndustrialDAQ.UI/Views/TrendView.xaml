@@ -1,0 +1,83 @@
+<UserControl x:Class="IndustrialDAQ.UI.Views.TrendView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             Background="{DynamicResource MainBgBrush}">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ 顶部工具栏 ═══ -->
+        <Border Grid.Row="0" Background="{DynamicResource CardBgBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+            <DockPanel>
+                <!-- 标题 -->
+                <TextBlock Text="趋势监控" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,20,0"/>
+
+                <!-- 控制按钮 -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <!-- 暂停/恢复 -->
+                    <Button Command="{Binding TogglePauseCommand}" Margin="0,0,8,0"
+                            Padding="12,6" Background="#374151" Foreground="{DynamicResource TextPrimaryBrush}"
+                            BorderThickness="0" Cursor="Hand">
+                        <TextBlock Text="{Binding PauseButtonText}" VerticalAlignment="Center"/>
+                    </Button>
+
+                    <!-- 实时/历史切换 -->
+                    <Button Command="{Binding SwitchModeCommand}" Margin="0,0,8,0"
+                            Padding="12,6" Background="#374151" Foreground="{DynamicResource TextPrimaryBrush}"
+                            BorderThickness="0" Cursor="Hand">
+                        <TextBlock Text="{Binding ModeButtonText}" VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Tag 选择列表 -->
+                <ItemsControl ItemsSource="{Binding AvailableTags}" DockPanel.Dock="Right"
+                              Margin="0,0,20,0" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox Content="{Binding TagName}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                      Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,12,0"
+                                      Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      CommandParameter="{Binding}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Border>
+
+        <!-- ═══ 趋势图表 ═══ -->
+        <Border Grid.Row="1" Background="{DynamicResource CardBgBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+            <lvc:CartesianChart Series="{Binding Series}"
+                                XAxes="{Binding XAxes}"
+                                YAxes="{Binding YAxes}"
+                                LegendPosition="Right"
+                                LegendTextPaint="{Binding LegendPaint}"
+                                TooltipTextPaint="{Binding LegendPaint}"
+                                AnimationsSpeed="00:00:00.15"
+                                ZoomMode="X"
+                                Margin="8"/>
+        </Border>
+
+        <!-- ═══ 底部状态栏 ═══ -->
+        <Border Grid.Row="2" Background="{DynamicResource CardBgBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12,6" Margin="0,12,0,0">
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextMutedBrush}"
+                       FontSize="12" VerticalAlignment="Center"/>
+        </Border>
+    </Grid>
+</UserControl>

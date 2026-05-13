@@ -93,6 +93,14 @@ public sealed class AlarmEngine : IHostedService
     }
 
     /// <summary>
+    /// 获取所有报警规则。
+    /// </summary>
+    public IReadOnlyList<AlarmRule> GetRules()
+    {
+        return _rules.Values.ToList().AsReadOnly();
+    }
+
+    /// <summary>
     /// 获取所有报警实例。
     /// </summary>
     public IReadOnlyList<AlarmInstance> GetAllInstances()

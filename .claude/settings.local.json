@@ -39,7 +39,11 @@
       "Bash(Start-Sleep 2)",
       "Bash(Select-String -Pattern \"error|warning|成功|失败\")",
       "Bash(Select-Object -Last 10)",
-      "Bash(taskkill //PID 24344 //F)"
+      "Bash(taskkill //PID 24344 //F)",
+      "Bash(dir /s /b \"d:\\\\Cshrap\\\\Projects\\\\src\")",
+      "Bash(Get-ChildItem -Recurse \"d:\\\\Cshrap\\\\Projects\\\\src\" -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)"
     ]
   }
 }

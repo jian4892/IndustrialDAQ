@@ -31,6 +31,9 @@ public sealed class TagPoint
 
     /// <summary>Description for documentation purposes.</summary>
     public string Description { get; init; } = string.Empty;
+
+    /// <summary>引用的数据点模板 ID（可选，用于自动生成报警规则和趋势配置）。</summary>
+    public string? TemplateId { get; init; }
 }
 
 public enum TagDataType : byte
