@@ -75,7 +75,7 @@ public sealed class AlarmEvent
     public string AlarmId { get; init; } = string.Empty;
 
     /// <summary>报警规则。</summary>
-    public AlarmRule Rule { get; init; } = null!;
+    public AlarmDefinition Rule { get; init; } = null!;
 
     /// <summary>报警记录。</summary>
     public AlarmRecord Record { get; init; } = null!;

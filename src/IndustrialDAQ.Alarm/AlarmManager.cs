@@ -53,7 +53,7 @@ public sealed class AlarmManager : IHostedService
     /// <summary>
     /// 注册报警规则。
     /// </summary>
-    public void RegisterRule(AlarmRule rule)
+    public void RegisterRule(AlarmDefinition rule)
     {
         _engine.RegisterRule(rule);
     }
@@ -61,7 +61,7 @@ public sealed class AlarmManager : IHostedService
     /// <summary>
     /// 批量注册报警规则。
     /// </summary>
-    public void RegisterRules(IEnumerable<AlarmRule> rules)
+    public void RegisterRules(IEnumerable<AlarmDefinition> rules)
     {
         _engine.RegisterRules(rules);
     }

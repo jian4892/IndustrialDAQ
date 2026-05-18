@@ -32,8 +32,6 @@ public sealed class AlarmRecord
     /// <summary>触发时的测点值。</summary>
     public double TriggerValue { get; init; }
 
-    /// <summary>报警阈值。</summary>
-    public double Threshold { get; init; }
 
     /// <summary>发生时间 (UTC)。</summary>
     public DateTime OccurredAt { get; init; } = DateTime.UtcNow;

@@ -88,13 +88,18 @@ public sealed class TrendEngine : IHostedService
     }
 
     /// <summary>
-    /// 根据 AlarmRule 批量添加报警线。
+    /// 根据 AlarmDefinition 批量添加报警线。
     /// </summary>
-    public void AddAlarmLinesFromRules(IEnumerable<AlarmRule> rules)
+    public void AddAlarmLinesFromRules(IEnumerable<AlarmDefinition> rules)
     {
         foreach (var rule in rules)
         {
             if (rule.AlarmType == AlarmType.Bool) continue;
+
+            // 从表达式中提取数字作为阈值用于 UI 显示
+            var match = System.Text.RegularExpressions.Regex.Match(rule.ConditionExpression, @"\d+(\.\d+)?");
+            if (!match.Success || !double.TryParse(match.Value, out double threshold))
+                continue;
 
             string color = rule.Severity switch
             {
@@ -103,33 +108,13 @@ public sealed class TrendEngine : IHostedService
                 _ => "#3B82F6"
             };
 
-            // Threshold 用于 High/Low 类型
-            if (rule.Threshold > 0 && rule.AlarmType is AlarmType.High or AlarmType.Low)
-                AlarmLines.Add(new TrendAlarmLine
-                {
-                    TagId = rule.TagId, TagName = rule.TagName,
-                    Value = rule.Threshold, Severity = rule.Severity,
-                    Color = color, Label = $"{rule.TagName} {rule.AlarmType}",
-                    AlarmType = rule.AlarmType
-                });
-
-            if (rule.HighHighThreshold > 0)
-                AlarmLines.Add(new TrendAlarmLine
-                {
-                    TagId = rule.TagId, TagName = rule.TagName,
-                    Value = rule.HighHighThreshold, Severity = AlarmSeverity.Critical,
-                    Color = "#EF4444", Label = $"{rule.TagName} HH",
-                    AlarmType = AlarmType.HighHigh
-                });
-
-            if (rule.LowLowThreshold > 0)
-                AlarmLines.Add(new TrendAlarmLine
-                {
-                    TagId = rule.TagId, TagName = rule.TagName,
-                    Value = rule.LowLowThreshold, Severity = AlarmSeverity.Critical,
-                    Color = "#EF4444", Label = $"{rule.TagName} LL",
-                    AlarmType = AlarmType.LowLow
-                });
+            AlarmLines.Add(new TrendAlarmLine
+            {
+                TagId = rule.TagId, TagName = rule.TagName,
+                Value = threshold, Severity = rule.Severity,
+                Color = color, Label = $"{rule.TagName} {rule.AlarmType}",
+                AlarmType = rule.AlarmType
+            });
         }
     }
 

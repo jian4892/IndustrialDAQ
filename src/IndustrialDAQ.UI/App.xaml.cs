@@ -2,11 +2,20 @@
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Acquisition.Mocks;
 using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Alarm.Center;
+using IndustrialDAQ.Alarm.RuleBuilder;
+using IndustrialDAQ.Alarm.RuleEngine;
+using IndustrialDAQ.Alarm.StateMachine;
 using IndustrialDAQ.Core;
+using IndustrialDAQ.Core.Authorization;
 using IndustrialDAQ.Core.Configuration;
 using IndustrialDAQ.Core.Interfaces;
 using IndustrialDAQ.Core.Models;
+using IndustrialDAQ.Core.ResourceTree;
 using IndustrialDAQ.Infrastructure;
+using IndustrialDAQ.Infrastructure.Alarms;
+using IndustrialDAQ.Infrastructure.Authorization;
+using IndustrialDAQ.Infrastructure.ResourceTree;
 using IndustrialDAQ.Storage;
 using IndustrialDAQ.Trend;
 using IndustrialDAQ.UI.ViewModels;
@@ -55,6 +64,25 @@ public partial class App : PrismApplication
 
         // 设备模板仓储
         containerRegistry.RegisterSingleton<DeviceTemplateRepository>();
+
+        // Runtime resource tree. Later modules use this same tree for menus,
+        // devices, tags, alarms, rules and inherited permissions.
+        containerRegistry.RegisterSingleton<IResourceTreeRepository, ResourceTreeRepository>();
+        containerRegistry.RegisterSingleton<IResourceTreeService, ResourceTreeService>();
+        containerRegistry.RegisterSingleton<IAuthorizationRepository, AuthorizationRepository>();
+        containerRegistry.RegisterSingleton<IAuthorizationService, AuthorizationService>();
+
+        // Database-backed alarm definitions. RuleBuilder will consume these
+        // definitions and build executable workflows in the next module.
+        containerRegistry.RegisterSingleton<IAlarmDefinitionRepository, AlarmDefinitionRepository>();
+        containerRegistry.RegisterSingleton<IAlarmDefinitionService, AlarmDefinitionService>();
+        containerRegistry.RegisterSingleton<IAlarmRuleBuilder, AlarmRuleBuilder>();
+        containerRegistry.RegisterSingleton<IAlarmRuleSignalBus, AlarmRuleSignalBus>();
+        containerRegistry.RegisterSingleton<IRuleEngineService, RuleEngineService>();
+        containerRegistry.RegisterSingleton<IAlarmStateTransitionBus, AlarmStateTransitionBus>();
+        containerRegistry.RegisterSingleton<IAlarmStateMachineService, AlarmStateMachineService>();
+        containerRegistry.RegisterSingleton<IAlarmCenterEventBus, AlarmCenterEventBus>();
+        containerRegistry.RegisterSingleton<IAlarmCenter, AlarmCenter>();
 
         // ViewModel 注册（支持构造函数注入）
         containerRegistry.Register<AlarmRecordViewModel>();
@@ -120,6 +148,9 @@ public partial class App : PrismApplication
         var templateRepo = Container.Resolve<DeviceTemplateRepository>();
         _ = templateRepo.InitializeBuiltInTemplatesAsync();
 
+        var authorizationService = Container.Resolve<IAuthorizationService>();
+        _ = authorizationService.ReloadAsync(CancellationToken.None);
+
         // ── 注册所有协议驱动 ──
         var driverFactory = Container.Resolve<IDriverFactory>();
 
@@ -157,8 +188,14 @@ public partial class App : PrismApplication
         // ── 启动报警系统 ──
         var alarmEngine = Container.Resolve<AlarmEngine>();
         var alarmManager = Container.Resolve<AlarmManager>();
+        var ruleEngineService = Container.Resolve<IRuleEngineService>();
+        var alarmStateMachineService = Container.Resolve<IAlarmStateMachineService>();
+        var alarmCenter = Container.Resolve<IAlarmCenter>();
         _ = alarmEngine.StartAsync(CancellationToken.None);
         _ = alarmManager.StartAsync(CancellationToken.None);
+        _ = ruleEngineService.StartAsync(CancellationToken.None);
+        _ = alarmStateMachineService.StartAsync(CancellationToken.None);
+        _ = alarmCenter.StartAsync(CancellationToken.None);
 
         // ── 注册测试报警规则 ──
         RegisterTestAlarmRules(alarmManager);
@@ -238,6 +275,45 @@ public partial class App : PrismApplication
             CREATE UNIQUE INDEX IF NOT EXISTS IX_alarm_templates_TemplateId ON alarm_templates(TemplateId);
             CREATE INDEX IF NOT EXISTS IX_alarm_templates_IsBuiltIn ON alarm_templates(IsBuiltIn);
 
+            CREATE TABLE IF NOT EXISTS alarm_definitions (
+                Id TEXT PRIMARY KEY,
+                RuleId TEXT NOT NULL,
+                AlarmCode TEXT NOT NULL,
+                ResourcePath TEXT,
+                TargetResourcePath TEXT,
+                TagId TEXT NOT NULL DEFAULT '',
+                TagName TEXT NOT NULL DEFAULT '',
+                AlarmType TEXT NOT NULL DEFAULT 'High',
+                ConditionExpression TEXT NOT NULL,
+                ConditionsJson TEXT NOT NULL DEFAULT '[]',
+                ClearExpression TEXT,
+                SuppressionExpression TEXT,
+                ExpressionJoin TEXT NOT NULL DEFAULT 'And',
+                DelayMs INTEGER NOT NULL DEFAULT 0,
+                Hysteresis REAL NOT NULL DEFAULT 0,
+                Severity TEXT NOT NULL DEFAULT 'Warning',
+                Title TEXT NOT NULL DEFAULT '',
+                MessageTemplate TEXT NOT NULL DEFAULT '',
+                Source TEXT NOT NULL DEFAULT '',
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                AckPolicy TEXT NOT NULL DEFAULT 'Required',
+                ClearPolicy TEXT NOT NULL DEFAULT 'AutoClearWhenConditionFalse',
+                CooldownSeconds INTEGER NOT NULL DEFAULT 60,
+                WorkflowType TEXT NOT NULL DEFAULT 'Expression',
+                WorkflowKey TEXT NOT NULL DEFAULT 'default',
+                MetadataJson TEXT,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_alarm_definitions_RuleId ON alarm_definitions(RuleId);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_AlarmCode ON alarm_definitions(AlarmCode);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_ResourcePath ON alarm_definitions(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TargetResourcePath ON alarm_definitions(TargetResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TagId ON alarm_definitions(TagId);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_IsEnabled ON alarm_definitions(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TargetResourcePath_AlarmCode ON alarm_definitions(TargetResourcePath, AlarmCode);
+
             CREATE TABLE IF NOT EXISTS trend_templates (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 TemplateId TEXT NOT NULL,
@@ -256,6 +332,50 @@ public partial class App : PrismApplication
             );
             CREATE UNIQUE INDEX IF NOT EXISTS IX_trend_templates_TemplateId ON trend_templates(TemplateId);
             CREATE INDEX IF NOT EXISTS IX_trend_templates_IsBuiltIn ON trend_templates(IsBuiltIn);
+
+            -- 运行时资源树表：存储工厂、产线、设备、标签等所有资源的层级关系
+            CREATE TABLE IF NOT EXISTS resource_nodes (
+                Id TEXT PRIMARY KEY,
+                ParentId TEXT,
+                ResourcePath TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                DisplayName TEXT NOT NULL,
+                ResourceType TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                MetadataJson TEXT,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_resource_nodes_ResourcePath ON resource_nodes(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ParentId ON resource_nodes(ParentId);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ResourceType ON resource_nodes(ResourceType);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_IsEnabled ON resource_nodes(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ParentId_SortOrder ON resource_nodes(ParentId, SortOrder);
+
+            CREATE TABLE IF NOT EXISTS permission_policies (
+                Id TEXT PRIMARY KEY,
+                SubjectType TEXT NOT NULL,
+                SubjectId TEXT NOT NULL,
+                ResourcePath TEXT NOT NULL,
+                Action TEXT NOT NULL,
+                Effect TEXT NOT NULL,
+                Inherit INTEGER NOT NULL DEFAULT 1,
+                Priority INTEGER NOT NULL DEFAULT 0,
+                ConditionJson TEXT,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectId ON permission_policies(SubjectId);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectType ON permission_policies(SubjectType);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_ResourcePath ON permission_policies(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_Action ON permission_policies(Action);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_IsEnabled ON permission_policies(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectType_SubjectId_Action ON permission_policies(SubjectType, SubjectId, Action);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_ResourcePath_Action ON permission_policies(ResourcePath, Action);
         ";
         cmd.ExecuteNonQuery();
 
@@ -273,13 +393,14 @@ public partial class App : PrismApplication
             // ═══ S7-1500 PLC (OpcUA) 报警规则 ═══
 
             // 高限报警 — 灌装液位达到或超过 700 mL
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-fill-high",
+                AlarmCode = "FILL_LEVEL_HIGH",
                 TagId = "tag-filling-actuallevel",
                 TagName = "Filling.ActualLevel",
                 AlarmType = AlarmType.High,
-                Threshold = 699.0,  // >= 700 报警（使用 699 配合 > 判断）
+                ConditionExpression = "Value >= 700",
                 Hysteresis = 30.0,  // 报警后需降到 670 以下才恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "灌装液位偏高",
@@ -288,14 +409,14 @@ public partial class App : PrismApplication
                 CooldownSeconds = 60  // 60秒冷却，防止重复报警
             },
             // 高高限报警 — 灌装液位达到或超过 800 mL（溢出风险）
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-fill-highhigh",
+                AlarmCode = "FILL_LEVEL_HIGH_HIGH",
                 TagId = "tag-filling-actuallevel",
                 TagName = "Filling.ActualLevel",
                 AlarmType = AlarmType.HighHigh,
-                Threshold = 799.0,  // >= 800 报警
-                HighHighThreshold = 799.0,
+                ConditionExpression = "Value >= 800",
                 Hysteresis = 30.0,  // 报警后需降到 770 以下才恢复
                 Severity = AlarmSeverity.Critical,
                 Title = "灌装液位超高（溢出风险）",
@@ -304,42 +425,46 @@ public partial class App : PrismApplication
                 CooldownSeconds = 60  // 60秒冷却，防止重复报警
             },
             // 高限报警 — 传送速度超过 25 m/min
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-speed-high",
+                AlarmCode = "CONVEYOR_SPEED_HIGH",
                 TagId = "tag-conveyor-actualspeed",
                 TagName = "Conveyor.ActualSpeed",
                 AlarmType = AlarmType.High,
-                Threshold = 25.0,
+                ConditionExpression = "Value > 25",
                 Hysteresis = 2.0,  // >25 报警, <23 恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "传送速度偏高",
-                MessageTemplate = "传送速度 {Value} m/min 超过 {Threshold} m/min",
+                MessageTemplate = "传送速度 {Value} m/min 超过 25 m/min",
                 Source = "灌装产线 S7-1500",
                 CooldownSeconds = 15
             },
             // 低限报警 — 传送速度低于 5 m/min
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-speed-low",
+                AlarmCode = "CONVEYOR_SPEED_LOW",
                 TagId = "tag-conveyor-actualspeed",
                 TagName = "Conveyor.ActualSpeed",
                 AlarmType = AlarmType.Low,
-                Threshold = 5.0,
+                ConditionExpression = "Value < 5",
                 Hysteresis = 2.0,  // <5 报警, >7 恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "传送速度偏低",
-                MessageTemplate = "传送速度 {Value} m/min 低于 {Threshold} m/min",
+                MessageTemplate = "传送速度 {Value} m/min 低于 5 m/min",
                 Source = "灌装产线 S7-1500",
                 CooldownSeconds = 15
             },
             // 布尔报警 — 急停按钮触发
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-estop",
+                AlarmCode = "LINE_ESTOP_ACTIVE",
                 TagId = "tag-line-estop",
                 TagName = "Line.EStop",
                 AlarmType = AlarmType.Bool,
+                ConditionExpression = "Value == true",
                 Severity = AlarmSeverity.Critical,
                 Title = "急停按钮已触发",
                 MessageTemplate = "产线急停按钮已按下，请立即检查！",

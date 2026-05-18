@@ -174,13 +174,14 @@ try
     alarmEngine.RegisterRules(new[]
     {
         // 灌装液位高限报警
-        new AlarmRule
+        new AlarmDefinition
         {
             RuleId = "alm-fill-high",
+            AlarmCode = "FILL_LEVEL_HIGH",
             TagId = "tag-filling-actuallevel",
             TagName = "Filling.ActualLevel",
             AlarmType = AlarmType.High,
-            Threshold = 700.0,
+            ConditionExpression = "Value >= 700",
             Hysteresis = 30.0,
             Severity = AlarmSeverity.Warning,
             Title = "灌装液位偏高",
@@ -189,13 +190,14 @@ try
             CooldownSeconds = 15
         },
         // 灌装液位高高限报警
-        new AlarmRule
+        new AlarmDefinition
         {
             RuleId = "alm-fill-highhigh",
+            AlarmCode = "FILL_LEVEL_HIGH_HIGH",
             TagId = "tag-filling-actuallevel",
             TagName = "Filling.ActualLevel",
             AlarmType = AlarmType.HighHigh,
-            HighHighThreshold = 800.0,
+            ConditionExpression = "Value >= 800",
             Hysteresis = 30.0,
             Severity = AlarmSeverity.Critical,
             Title = "灌装液位超高（溢出风险）",
@@ -204,13 +206,14 @@ try
             CooldownSeconds = 10
         },
         // 传送速度高限报警
-        new AlarmRule
+        new AlarmDefinition
         {
             RuleId = "alm-speed-high",
+            AlarmCode = "CONVEYOR_SPEED_HIGH",
             TagId = "tag-conveyor-actualspeed",
             TagName = "Conveyor.ActualSpeed",
             AlarmType = AlarmType.High,
-            Threshold = 25.0,
+            ConditionExpression = "Value > 25",
             Hysteresis = 2.0,
             Severity = AlarmSeverity.Warning,
             Title = "传送速度偏高",

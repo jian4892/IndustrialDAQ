@@ -44,8 +44,7 @@ public sealed class AlarmHistoryEntity
     /// <summary>触发值。</summary>
     public double TriggerValue { get; set; }
 
-    /// <summary>报警阈值。</summary>
-    public double Threshold { get; set; }
+
 
     /// <summary>发生时间 (UTC)。</summary>
     public DateTime OccurredAt { get; set; }
@@ -77,7 +76,7 @@ public sealed class AlarmHistoryEntity
             TagId = record.TagId,
             TagName = record.TagName,
             TriggerValue = record.TriggerValue,
-            Threshold = record.Threshold,
+
             OccurredAt = record.OccurredAt,
             AcknowledgedAt = record.AcknowledgedAt,
             ClearedAt = record.ClearedAt,
@@ -101,7 +100,7 @@ public sealed class AlarmHistoryEntity
             TagId = TagId,
             TagName = TagName,
             TriggerValue = TriggerValue,
-            Threshold = Threshold,
+
             OccurredAt = DateTime.SpecifyKind(OccurredAt, DateTimeKind.Utc).ToLocalTime(),
             Status = Status,
             AcknowledgedAt = AcknowledgedAt.HasValue

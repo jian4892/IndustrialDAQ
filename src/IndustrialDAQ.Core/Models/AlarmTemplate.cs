@@ -3,7 +3,7 @@ namespace IndustrialDAQ.Core.Models;
 
 /// <summary>
 /// 报警模板 — 预定义的报警规则模板，适用于常见工业场景。
-/// 通过 <see cref="CreateRule"/> 根据具体测点生成 <see cref="AlarmRule"/>。
+/// 通过 <see cref="CreateRules"/> 根据具体测点生成 <see cref="AlarmDefinition"/>。
 /// </summary>
 public sealed class AlarmTemplate
 {
@@ -50,9 +50,9 @@ public sealed class AlarmTemplate
     /// <param name="tagName">测点名称。</param>
     /// <param name="source">来源设备名称。</param>
     /// <returns>报警规则列表（每个支持的报警类型生成一条规则）。</returns>
-    public IReadOnlyList<AlarmRule> CreateRules(string tagId, string tagName, string source)
+    public IReadOnlyList<AlarmDefinition> CreateRules(string tagId, string tagName, string source)
     {
-        var rules = new List<AlarmRule>();
+        var rules = new List<AlarmDefinition>();
 
         foreach (var alarmType in SupportedAlarmTypes)
         {
@@ -75,19 +75,28 @@ public sealed class AlarmTemplate
                 _ => Severity
             };
 
+            string condition = alarmType switch
+            {
+                AlarmType.High => $"Value > {threshold}",
+                AlarmType.HighHigh => $"Value > {threshold}",
+                AlarmType.Low => $"Value < {threshold}",
+                AlarmType.LowLow => $"Value < {threshold}",
+                AlarmType.Bool => "Value == true",
+                _ => "false"
+            };
+
             string title = $"{tagName} {alarmType} 报警";
             string messageTemplate = alarmType == AlarmType.Bool
                 ? $"{tagName} 状态报警"
-                : $"{tagName} {{Value}} {Unit} 超限 ({alarmType}: {{Threshold}})";
+                : $"{tagName} {{Value}} {Unit} 超限 ({alarmType}: {threshold})";
 
-            rules.Add(new AlarmRule
+            rules.Add(new AlarmDefinition
             {
+                AlarmCode = $"{tagName.Replace('.', '_').Replace(' ', '_')}_{alarmType}".ToUpperInvariant(),
                 TagId = tagId,
                 TagName = tagName,
                 AlarmType = alarmType,
-                Threshold = threshold,
-                HighHighThreshold = HighHighThreshold,
-                LowLowThreshold = LowLowThreshold,
+                ConditionExpression = condition,
                 Hysteresis = Hysteresis,
                 Severity = severity,
                 Title = title,

@@ -21,7 +21,7 @@ public sealed class AlarmEngine : IHostedService
     private readonly ILogger<AlarmEngine> _logger;
 
     /// <summary>所有报警规则（线程安全字典）。</summary>
-    private readonly ConcurrentDictionary<string, AlarmRule> _rules = new();
+    private readonly ConcurrentDictionary<string, AlarmDefinition> _rules = new();
 
     /// <summary>规则 → 报警实例（管理状态机）。</summary>
     private readonly ConcurrentDictionary<string, AlarmInstance> _instances = new();
@@ -45,7 +45,7 @@ public sealed class AlarmEngine : IHostedService
     /// <summary>
     /// 注册报警规则。
     /// </summary>
-    public void RegisterRule(AlarmRule rule)
+    public void RegisterRule(AlarmDefinition rule)
     {
         _rules[rule.RuleId] = rule;
 
@@ -55,14 +55,14 @@ public sealed class AlarmEngine : IHostedService
         instance.StateChanged += OnAlarmStateChanged;
         _instances[rule.RuleId] = instance;
 
-        _logger.LogInformation("已注册报警规则: {RuleId} [{TagName} {AlarmType} {Threshold}] {Title}",
-            rule.RuleId, rule.TagName, rule.AlarmType, rule.Threshold, rule.Title);
+        _logger.LogInformation("已注册报警规则: {RuleId} [{TagName} {AlarmType}] {Title}",
+            rule.RuleId, rule.TagName, rule.AlarmType, rule.Title);
     }
 
     /// <summary>
     /// 批量注册报警规则。
     /// </summary>
-    public void RegisterRules(IEnumerable<AlarmRule> rules)
+    public void RegisterRules(IEnumerable<AlarmDefinition> rules)
     {
         foreach (var rule in rules) RegisterRule(rule);
     }
@@ -95,7 +95,7 @@ public sealed class AlarmEngine : IHostedService
     /// <summary>
     /// 获取所有报警规则。
     /// </summary>
-    public IReadOnlyList<AlarmRule> GetRules()
+    public IReadOnlyList<AlarmDefinition> GetRules()
     {
         return _rules.Values.ToList().AsReadOnly();
     }
@@ -165,11 +165,11 @@ public sealed class AlarmEngine : IHostedService
                         value.TagId, value.Value, matchedRules.Count);
                 }
 
-                foreach (AlarmRule rule in matchedRules)
+                foreach (AlarmDefinition rule in matchedRules)
                 {
                     if (_instances.TryGetValue(rule.RuleId, out AlarmInstance? instance))
                     {
-                        EvaluateInstance(instance, value);
+                        await EvaluateInstanceAsync(instance, value);
                     }
                 }
             }
@@ -187,7 +187,7 @@ public sealed class AlarmEngine : IHostedService
     /// <summary>
     /// 评估报警实例，处理状态转换。
     /// </summary>
-    private void EvaluateInstance(AlarmInstance instance, TagValue value)
+    private async Task EvaluateInstanceAsync(AlarmInstance instance, TagValue value)
     {
         try
         {
@@ -197,15 +197,15 @@ public sealed class AlarmEngine : IHostedService
                 return;
             }
 
-            _logger.LogDebug("评估规则 {RuleId}: {TagName} = {Value}, 阈值 = {Threshold}, 类型 = {AlarmType}",
-                instance.Rule.RuleId, instance.Rule.TagName, currentValue,
-                instance.Rule.Threshold, instance.Rule.AlarmType);
+            _logger.LogDebug("评估规则 {RuleId}: {TagName} = {Value}, 表达式 = {Expression}, 类型 = {AlarmType}",
+                instance.Definition.RuleId, instance.Definition.TagName, currentValue,
+                instance.Definition.ConditionExpression, instance.Definition.AlarmType);
 
-            bool stateChanged = instance.Evaluate(currentValue);
+            bool stateChanged = await instance.EvaluateAsync(currentValue);
 
             if (stateChanged)
             {
-                string severityLabel = instance.Rule.Severity switch
+                string severityLabel = instance.Definition.Severity switch
                 {
                     AlarmSeverity.Critical => "严重",
                     AlarmSeverity.Warning => "警告",
@@ -221,8 +221,8 @@ public sealed class AlarmEngine : IHostedService
                 };
 
                 _logger.LogWarning("[{Severity}] {AlarmId}: {Title} — {TagName}={Value}, 状态: {State}",
-                    severityLabel, instance.AlarmId, instance.Rule.Title,
-                    instance.Rule.TagName, currentValue, stateLabel);
+                    severityLabel, instance.AlarmId, instance.Definition.Title,
+                    instance.Definition.TagName, currentValue, stateLabel);
             }
         }
         catch (Exception ex)
@@ -274,21 +274,21 @@ public sealed class AlarmEngine : IHostedService
                 _ => AlarmStatus.Active
             };
 
-            string message = BuildMessage(e.Rule, e.TriggerValue ?? 0, e.NewState);
+            string message = BuildMessage(e.Definition, e.TriggerValue ?? 0, e.NewState);
 
             // 创建报警记录
             var record = new AlarmRecord
             {
                 Id = alarmId,
-                RuleId = e.Rule.RuleId,
-                Severity = e.Rule.Severity,
-                Source = e.Rule.Source,
-                Title = e.Rule.Title,
+                RuleId = e.Definition.RuleId,
+                Severity = e.Definition.Severity,
+                Source = e.Definition.Source,
+                Title = e.Definition.Title,
                 Message = message,
-                TagId = e.Rule.TagId,
-                TagName = e.Rule.TagName,
+                TagId = e.Definition.TagId,
+                TagName = e.Definition.TagName,
                 TriggerValue = e.TriggerValue ?? 0,
-                Threshold = e.Rule.Threshold,
+
                 OccurredAt = e.Timestamp,
                 Status = alarmStatus,
                 AcknowledgedAt = e.NewState == AlarmState.Acknowledged ? e.Timestamp : null,
@@ -300,7 +300,7 @@ public sealed class AlarmEngine : IHostedService
             {
                 EventType = eventType,
                 AlarmId = alarmId,
-                Rule = e.Rule,
+                Rule = e.Definition,
                 Record = record,
                 TriggerValue = e.TriggerValue ?? 0,
                 Timestamp = e.Timestamp,
@@ -322,7 +322,7 @@ public sealed class AlarmEngine : IHostedService
     /// <summary>
     /// 构建报警消息，替换消息模板中的占位符。
     /// </summary>
-    private static string BuildMessage(AlarmRule rule, double currentValue, AlarmState state)
+    private static string BuildMessage(AlarmDefinition rule, double currentValue, AlarmState state)
     {
         string prefix = state switch
         {
@@ -333,12 +333,12 @@ public sealed class AlarmEngine : IHostedService
         };
 
         string baseMessage = string.IsNullOrWhiteSpace(rule.MessageTemplate)
-            ? $"{rule.TagName} 当前值: {currentValue:F2}, 阈值: {rule.Threshold:F2}"
+            ? $"{rule.TagName} 当前值: {currentValue:F2}, 表达式: {rule.ConditionExpression}"
             : rule.MessageTemplate
                 .Replace("{TagName}", rule.TagName)
                 .Replace("{Value}", currentValue.ToString("F2"))
-                .Replace("{Threshold}", rule.Threshold.ToString("F2"))
-                .Replace("{Operator}", rule.AlarmType.ToString());
+                .Replace("{Expression}", rule.ConditionExpression)
+                .Replace("{Delay}", rule.DelaySeconds.ToString());
 
         return $"{prefix} {baseMessage}";
     }
