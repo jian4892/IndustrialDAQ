@@ -20,6 +20,7 @@ using IndustrialDAQ.Storage;
 using IndustrialDAQ.Trend;
 using IndustrialDAQ.UI.ViewModels;
 using IndustrialDAQ.UI.Views;
+using IndustrialDAQ.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -52,9 +53,7 @@ public partial class App : PrismApplication
         containerRegistry.RegisterSingleton<HistoryWriter>();
         containerRegistry.RegisterSingleton<MainWindowViewModel>();
 
-        // 报警系统服务
-        containerRegistry.RegisterSingleton<AlarmEventBus>();
-        containerRegistry.RegisterSingleton<AlarmEngine>();
+        // 报警系统服务（统一走新链路，AlarmManager 仅作为 UI 兼容门面）
         containerRegistry.RegisterSingleton<AlarmHistoryRepository>();
         containerRegistry.RegisterSingleton<AlarmManager>();
 
@@ -69,6 +68,10 @@ public partial class App : PrismApplication
         // devices, tags, alarms, rules and inherited permissions.
         containerRegistry.RegisterSingleton<IResourceTreeRepository, ResourceTreeRepository>();
         containerRegistry.RegisterSingleton<IResourceTreeService, ResourceTreeService>();
+        
+        containerRegistry.RegisterSingleton<IUserRepository, UserRepository>();
+        containerRegistry.RegisterSingleton<IAuthManager, AuthManager>();
+
         containerRegistry.RegisterSingleton<IAuthorizationRepository, AuthorizationRepository>();
         containerRegistry.RegisterSingleton<IAuthorizationService, AuthorizationService>();
 
@@ -95,11 +98,13 @@ public partial class App : PrismApplication
         containerRegistry.RegisterForNavigation<TrendView>();
         containerRegistry.RegisterForNavigation<DeviceTemplateView>();
         containerRegistry.RegisterForNavigation<SystemSettingsView>();
+        containerRegistry.RegisterForNavigation<ResourceRuleConfigView, ResourceRuleConfigViewModel>();
 
         containerRegistry.RegisterDialogWindow<FramelessDialogWindow>();
         containerRegistry.RegisterDialog<WriteTagDialog, WriteTagDialogViewModel>();
         containerRegistry.RegisterDialog<CreateDeviceDialog, CreateDeviceDialogViewModel>();
         containerRegistry.RegisterDialog<AddDeviceTemplateDialog, AddDeviceTemplateDialogViewModel>();
+        containerRegistry.RegisterDialog<LoginDialog, LoginDialogViewModel>();
     }
 
     protected override IContainerExtension CreateContainerExtension()
@@ -186,12 +191,10 @@ public partial class App : PrismApplication
         _ = historyWriter.StartAsync(CancellationToken.None);
 
         // ── 启动报警系统 ──
-        var alarmEngine = Container.Resolve<AlarmEngine>();
         var alarmManager = Container.Resolve<AlarmManager>();
         var ruleEngineService = Container.Resolve<IRuleEngineService>();
         var alarmStateMachineService = Container.Resolve<IAlarmStateMachineService>();
         var alarmCenter = Container.Resolve<IAlarmCenter>();
-        _ = alarmEngine.StartAsync(CancellationToken.None);
         _ = alarmManager.StartAsync(CancellationToken.None);
         _ = ruleEngineService.StartAsync(CancellationToken.None);
         _ = alarmStateMachineService.StartAsync(CancellationToken.None);
@@ -203,7 +206,7 @@ public partial class App : PrismApplication
         // ── 启动趋势引擎 ──
         var trendEngine = Container.Resolve<TrendEngine>();
         _ = trendEngine.StartAsync(CancellationToken.None);
-        RegisterTrendTags(trendEngine, alarmEngine);
+        RegisterTrendTags(trendEngine, Container.Resolve<IAlarmDefinitionService>());
 
         // ── 加载 JSON 配置并启动设备 ──
         _ = LoadAndStartDevicesAsync(acquisitionHost, historyWriter);
@@ -383,7 +386,7 @@ public partial class App : PrismApplication
     }
 
     /// <summary>
-    /// 注册测试报警规则 — 用于开发调试。
+    /// 注册测试报警规则到新报警定义仓储，用于开发调试。
     /// TagId 匹配 production-line.json 中的实际配置。
     /// </summary>
     private void RegisterTestAlarmRules(AlarmManager alarmManager)
@@ -478,9 +481,9 @@ public partial class App : PrismApplication
     }
 
     /// <summary>
-    /// 注册趋势跟踪 Tag — 读取已注册的报警规则，为模拟量 Tag 创建趋势和报警线。
+    /// 注册趋势跟踪 Tag，并从新报警定义快照中生成趋势报警线。
     /// </summary>
-    private void RegisterTrendTags(TrendEngine trendEngine, AlarmEngine alarmEngine)
+    private void RegisterTrendTags(TrendEngine trendEngine, IAlarmDefinitionService definitionService)
     {
         // 为所有模拟量读取 Tag 注册趋势跟踪
         var analogTags = new[] { "tag-filling-actuallevel", "tag-conveyor-actualspeed" };
@@ -519,8 +522,8 @@ public partial class App : PrismApplication
             trendEngine.RegisterTag(tagId, template);
         }
 
-        // 从已注册的报警规则添加报警线
-        var rules = alarmEngine.GetRules();
+        // 从新链路已加载的报警定义添加报警线
+        var rules = definitionService.Current.Definitions;
         trendEngine.AddAlarmLinesFromRules(rules);
         Log.Information("已注册 {Count} 个趋势 Tag，{LineCount} 条报警线", analogTags.Length, trendEngine.AlarmLines.Count);
     }

@@ -84,6 +84,7 @@ public class MainWindowViewModel : BindableBase
                 "Trend" => "TrendView",
                 "DeviceTemplate" => "DeviceTemplateView",
                 "SystemSettings" => "SystemSettingsView",
+                "ResourceRuleConfig" => "ResourceRuleConfigView",
                 _ => page
             };
 
@@ -96,6 +97,7 @@ public class MainWindowViewModel : BindableBase
                 "Trend" => "趋势监控",
                 "DeviceTemplate" => "设备模板",
                 "SystemSettings" => "系统设置",
+                "ResourceRuleConfig" => "资源规则配置",
                 _ => page
             };
 

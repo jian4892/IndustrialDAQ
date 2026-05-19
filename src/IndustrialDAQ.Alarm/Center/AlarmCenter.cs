@@ -184,6 +184,13 @@ public sealed class AlarmCenter : IAlarmCenter
                     alarm.Status = AlarmStatus.Cleared;
                     alarm.ClearedAt = transition.OccurredAt.UtcDateTime;
                 });
+                await _historyRepository.UpdateStatusAsync(
+                    transition.OccurrenceId,
+                    AlarmStatus.Cleared,
+                    null,
+                    transition.OccurredAt.UtcDateTime,
+                    cancellationToken,
+                    resetClearedAt: false).ConfigureAwait(false);
                 break;
 
             case AlarmState.Normal:
@@ -231,9 +238,16 @@ public sealed class AlarmCenter : IAlarmCenter
         AlarmStateTransition transition,
         CancellationToken cancellationToken)
     {
-        // 如果是从 Cleared 状态跳回来的（同一个发生标识），不需要存新记录
+        // 如果是从 Cleared 状态跳回来的（同一个发生标识），不需要存新记录，但需要更新状态回 Active 并重置 ClearedAt
         if (transition.FromState == AlarmState.Cleared)
         {
+            await _historyRepository.UpdateStatusAsync(
+                transition.OccurrenceId,
+                AlarmStatus.Active,
+                null,
+                null,
+                cancellationToken,
+                resetClearedAt: true).ConfigureAwait(false);
             return;
         }
 

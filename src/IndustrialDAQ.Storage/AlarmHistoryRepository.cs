@@ -64,7 +64,7 @@ public sealed class AlarmHistoryRepository
     /// <param name="cancellationToken">取消令牌。</param>
     public async Task UpdateStatusAsync(string alarmId, AlarmStatus status,
         DateTime? acknowledgedAt = null, DateTime? clearedAt = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool resetClearedAt = false)
     {
         try
         {
@@ -86,7 +86,10 @@ public sealed class AlarmHistoryRepository
             entity.Status = status;
             if (acknowledgedAt.HasValue)
                 entity.AcknowledgedAt = acknowledgedAt.Value;
-            if (clearedAt.HasValue)
+            
+            if (resetClearedAt)
+                entity.ClearedAt = null;
+            else if (clearedAt.HasValue)
                 entity.ClearedAt = clearedAt.Value;
 
             int affected = await context.SaveChangesAsync(cancellationToken);

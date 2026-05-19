@@ -113,7 +113,7 @@ public sealed class AlarmRuleWorkflow
         var result = results.FirstOrDefault(item =>
             string.Equals(item.Rule.RuleName, ruleName, StringComparison.OrdinalIgnoreCase));
 
-        if (result?.ExceptionMessage is not null)
+        if (!string.IsNullOrWhiteSpace(result?.ExceptionMessage))
         {
             errors.Add($"{ruleName}: {result.ExceptionMessage}");
         }

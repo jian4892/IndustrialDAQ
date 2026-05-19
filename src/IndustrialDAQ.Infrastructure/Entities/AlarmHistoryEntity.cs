@@ -44,7 +44,8 @@ public sealed class AlarmHistoryEntity
     /// <summary>触发值。</summary>
     public double TriggerValue { get; set; }
 
-
+    /// <summary>阈值（为了兼容旧版数据库架构保留）。</summary>
+    public double Threshold { get; set; }
 
     /// <summary>发生时间 (UTC)。</summary>
     public DateTime OccurredAt { get; set; }
@@ -76,6 +77,7 @@ public sealed class AlarmHistoryEntity
             TagId = record.TagId,
             TagName = record.TagName,
             TriggerValue = record.TriggerValue,
+            Threshold = 0, // 为了兼容旧版架构的 NOT NULL 约束
 
             OccurredAt = record.OccurredAt,
             AcknowledgedAt = record.AcknowledgedAt,

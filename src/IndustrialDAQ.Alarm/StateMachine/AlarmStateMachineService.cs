@@ -311,6 +311,9 @@ public sealed class AlarmStateMachineService : IAlarmStateMachineService
             context.OccurrenceId = CreateOccurrenceId(context.Definition.RuleId, now);
         }
 
+        // 捕获当前的发生标识，防止在转换到 Normal 状态清空后丢失
+        var occurrenceIdToTransition = context.OccurrenceId;
+
         context.State = targetState;
         context.LastValue = value;
 
@@ -326,6 +329,7 @@ public sealed class AlarmStateMachineService : IAlarmStateMachineService
                 context.ClearedAt = null;
                 context.AcknowledgedAt = null;
                 context.OccurrenceId ??= CreateOccurrenceId(context.Definition.RuleId, now);
+                occurrenceIdToTransition = context.OccurrenceId;
                 break;
             case AlarmState.Acknowledged:
                 context.AcknowledgedAt = now;
@@ -348,7 +352,7 @@ public sealed class AlarmStateMachineService : IAlarmStateMachineService
 
         return new AlarmStateTransition
         {
-            OccurrenceId = context.OccurrenceId ?? CreateOccurrenceId(context.Definition.RuleId, now),
+            OccurrenceId = occurrenceIdToTransition ?? CreateOccurrenceId(context.Definition.RuleId, now),
             RuleId = context.Definition.RuleId,
             AlarmCode = context.Definition.AlarmCode,
             Definition = context.Definition,

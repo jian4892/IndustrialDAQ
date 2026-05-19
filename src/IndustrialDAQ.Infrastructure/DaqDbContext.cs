@@ -37,6 +37,9 @@ public sealed class DaqDbContext : DbContext
     /// <summary>Runtime permission policy table.</summary>
     public DbSet<PermissionPolicyEntity> PermissionPolicies => Set<PermissionPolicyEntity>();
 
+    /// <summary>User account table.</summary>
+    public DbSet<UserEntity> Users => Set<UserEntity>();
+
     /// <summary>
     /// 使用选项配置（由 DI 注入连接字符串）。
     /// </summary>
@@ -132,6 +135,13 @@ public sealed class DaqDbContext : DbContext
             entity.HasIndex(e => e.IsEnabled);
             entity.HasIndex(e => new { e.SubjectType, e.SubjectId, e.Action });
             entity.HasIndex(e => new { e.ResourcePath, e.Action });
+        });
+
+        modelBuilder.Entity<UserEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Username).IsUnique();
+            entity.HasIndex(e => e.IsActive);
         });
     }
 }

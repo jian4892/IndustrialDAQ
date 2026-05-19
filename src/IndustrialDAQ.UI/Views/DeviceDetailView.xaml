@@ -62,23 +62,23 @@
                     </Grid>
                 </Border>
 
-                <TreeView Grid.Row="1" ItemsSource="{Binding DeviceGroups}"
+                <TreeView Grid.Row="1" ItemsSource="{Binding TreeRoots}"
                           Background="Transparent" BorderThickness="0"
                           VirtualizingStackPanel.IsVirtualizing="True"
                           VirtualizingStackPanel.VirtualizationMode="Recycling">
                     <TreeView.Resources>
-                        <!-- 设备节点：仅占用名称列 -->
-                        <HierarchicalDataTemplate DataType="{x:Type vmodels:DeviceGroup}" ItemsSource="{Binding Tags}">
+                        <!-- 文件夹/设备节点 -->
+                        <HierarchicalDataTemplate DataType="{x:Type vmodels:ResourceTreeNodeItem}" ItemsSource="{Binding Children}">
                             <Grid Height="36">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition SharedSizeGroup="ColName"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" Grid.Column="0">
-                                    <TextBlock Text="📂" Margin="0,0,10,0" VerticalAlignment="Center" FontSize="16" Foreground="#FACC15"/>
-                                    <TextBlock Text="{Binding DeviceName}" FontSize="15" FontWeight="ExtraBold" 
+                                    <TextBlock Text="{Binding Icon}" Margin="0,0,10,0" VerticalAlignment="Center" FontSize="16" Foreground="{Binding IconColor}"/>
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="15" FontWeight="ExtraBold" 
                                                Foreground="{DynamicResource InfoBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding DeviceId, StringFormat=' ({0})'}" FontSize="11" 
+                                    <TextBlock Text="{Binding NodeId, StringFormat=' ({0})'}" FontSize="11" 
                                                Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </StackPanel>
                             </Grid>
@@ -148,7 +148,8 @@
                     
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem">
-                            <Setter Property="IsExpanded" Value="True"/>
+                            <!-- Try to bind IsExpanded to the ViewModel, fallback to True for root items if needed, but we handle it in VM -->
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                             <Setter Property="Padding" Value="0"/>
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="Template">

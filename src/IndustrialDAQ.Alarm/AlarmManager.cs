@@ -1,5 +1,6 @@
-// File: AlarmManager.cs  Module: Alarm Engine  Author: IndustrialDAQ Team
-using System.Collections.Concurrent;
+
+using IndustrialDAQ.Alarm.Center;
+using IndustrialDAQ.Alarm.RuleEngine;
 using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Storage;
 using Microsoft.Extensions.Hosting;
@@ -8,19 +9,19 @@ using Microsoft.Extensions.Logging;
 namespace IndustrialDAQ.Alarm;
 
 /// <summary>
-/// 报警管理服务 — 协调报警引擎、事件总线和历史存储。
-/// 作为 <see cref="IHostedService"/> 运行，订阅报警事件并持久化到数据库。
-/// 提供统一的报警管理 API。
+/// 报警管理门面。
+/// 对 UI 维持旧的事件和 API 形态，但内部已切换到
+/// AlarmDefinitionRepository -> RuleEngineService -> AlarmStateMachineService -> AlarmCenter
+/// 这条新链路。
 /// </summary>
 public sealed class AlarmManager : IHostedService
 {
-    private readonly AlarmEngine _engine;
-    private readonly AlarmEventBus _eventBus;
+    private readonly IAlarmCenter _alarmCenter;
+    private readonly IAlarmCenterEventBus _eventBus;
     private readonly AlarmHistoryRepository _repository;
+    private readonly IAlarmDefinitionRepository _definitionRepository;
+    private readonly IRuleEngineService _ruleEngineService;
     private readonly ILogger<AlarmManager> _logger;
-
-    /// <summary>实时报警列表（线程安全）。</summary>
-    private readonly ConcurrentDictionary<string, AlarmRecord> _activeAlarms = new();
 
     /// <summary>报警事件消费任务。</summary>
     private Task? _consumeTask;
@@ -41,29 +42,48 @@ public sealed class AlarmManager : IHostedService
     /// <summary>
     /// 初始化报警管理服务。
     /// </summary>
-    public AlarmManager(AlarmEngine engine, AlarmEventBus eventBus,
-        AlarmHistoryRepository repository, ILogger<AlarmManager> logger)
+    public AlarmManager(
+        IAlarmCenter alarmCenter,
+        IAlarmCenterEventBus eventBus,
+        AlarmHistoryRepository repository,
+        IAlarmDefinitionRepository definitionRepository,
+        IRuleEngineService ruleEngineService,
+        ILogger<AlarmManager> logger)
     {
-        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _alarmCenter = alarmCenter ?? throw new ArgumentNullException(nameof(alarmCenter));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
+        _ruleEngineService = ruleEngineService ?? throw new ArgumentNullException(nameof(ruleEngineService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// 注册报警规则。
+    /// 注册报警规则到新链路的定义仓储，并触发规则引擎热重载。
     /// </summary>
     public void RegisterRule(AlarmDefinition rule)
     {
-        _engine.RegisterRule(rule);
+        ArgumentNullException.ThrowIfNull(rule);
+        _definitionRepository.UpsertAsync(rule, CancellationToken.None).GetAwaiter().GetResult();
+        _ruleEngineService.ReloadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        _logger.LogInformation("已注册报警规则到新链路: {RuleId}", rule.RuleId);
     }
 
     /// <summary>
-    /// 批量注册报警规则。
+    /// 批量注册报警规则到新链路，并触发一次规则引擎热重载。
     /// </summary>
     public void RegisterRules(IEnumerable<AlarmDefinition> rules)
     {
-        _engine.RegisterRules(rules);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        var materialized = rules.ToArray();
+        foreach (var rule in materialized)
+        {
+            _definitionRepository.UpsertAsync(rule, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        _ruleEngineService.ReloadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        _logger.LogInformation("已批量注册 {Count} 条报警规则到新链路", materialized.Length);
     }
 
     /// <summary>
@@ -73,15 +93,10 @@ public sealed class AlarmManager : IHostedService
     /// <returns>是否成功确认。</returns>
     public bool AcknowledgeAlarm(string alarmId)
     {
-        // 查找对应的规则 ID
-        var ruleId = _activeAlarms.Values
-            .FirstOrDefault(a => a.Id == alarmId)?.RuleId;
-
-        if (ruleId is not null)
-        {
-            return _engine.AcknowledgeAlarm(ruleId);
-        }
-        return false;
+        return _alarmCenter
+            .AcknowledgeAsync(alarmId, "UI", CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <summary>
@@ -89,14 +104,10 @@ public sealed class AlarmManager : IHostedService
     /// </summary>
     public void AcknowledgeAllAlarms()
     {
-        var activeAlarms = _activeAlarms.Values
-            .Where(a => a.Status == AlarmStatus.Active)
-            .ToList();
-
-        foreach (var alarm in activeAlarms)
-        {
-            AcknowledgeAlarm(alarm.Id);
-        }
+        _alarmCenter
+            .AcknowledgeAllAsync("UI", CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <summary>
@@ -104,7 +115,8 @@ public sealed class AlarmManager : IHostedService
     /// </summary>
     public IReadOnlyList<AlarmRecord> GetActiveAlarms()
     {
-        return _activeAlarms.Values
+        return _alarmCenter
+            .GetCurrentAlarms()
             .OrderByDescending(a => a.OccurredAt)
             .ToList()
             .AsReadOnly();
@@ -136,9 +148,9 @@ public sealed class AlarmManager : IHostedService
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _cts = new CancellationTokenSource();
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _consumeTask = Task.Run(() => ConsumeEventsAsync(_cts.Token), _cts.Token);
-        _logger.LogInformation("报警管理服务已启动");
+        _logger.LogInformation("报警管理门面已启动，事件源切换到 AlarmCenter");
         return Task.CompletedTask;
     }
 
@@ -166,12 +178,12 @@ public sealed class AlarmManager : IHostedService
         _logger.LogDebug("报警管理服务消费循环已启动");
         try
         {
-            await foreach (var alarmEvent in _eventBus.Subscribe(ct).ConfigureAwait(false))
+            await foreach (var alarmEvent in _eventBus.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 ct.ThrowIfCancellationRequested();
 
-                _logger.LogDebug("收到报警事件: {AlarmId}, 类型: {EventType}, 规则: {RuleId}",
-                    alarmEvent.AlarmId, alarmEvent.EventType, alarmEvent.Rule.RuleId);
+                _logger.LogDebug("收到报警中心事件: {AlarmId}, 类型: {EventType}, 规则: {RuleId}",
+                    alarmEvent.Record.Id, alarmEvent.EventType, alarmEvent.Record.RuleId);
 
                 try
                 {
@@ -179,7 +191,7 @@ public sealed class AlarmManager : IHostedService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "处理报警事件失败: {AlarmId}", alarmEvent.AlarmId);
+                    _logger.LogError(ex, "处理报警事件失败: {AlarmId}", alarmEvent.Record.Id);
                 }
             }
         }
@@ -194,76 +206,37 @@ public sealed class AlarmManager : IHostedService
     }
 
     /// <summary>
-    /// 处理单个报警事件。
+    /// 处理单个报警中心事件，并向旧 UI 事件模型做兼容分发。
     /// </summary>
-    private async Task ProcessAlarmEventAsync(AlarmEvent alarmEvent, CancellationToken ct)
+    private Task ProcessAlarmEventAsync(AlarmCenterEvent alarmEvent, CancellationToken ct)
     {
         var record = alarmEvent.Record;
 
-        _logger.LogInformation("处理报警事件: AlarmId={AlarmId}, EventType={EventType}, RuleId={RuleId}",
-            alarmEvent.AlarmId, alarmEvent.EventType, alarmEvent.Rule.RuleId);
+        _logger.LogInformation("处理报警中心事件: AlarmId={AlarmId}, EventType={EventType}, RuleId={RuleId}",
+            record.Id, alarmEvent.EventType, record.RuleId);
 
         switch (alarmEvent.EventType)
         {
-            case AlarmEventType.Triggered:
-                // 检查是否已存在相同规则的活跃报警
-                var existingAlarm = _activeAlarms.Values
-                    .FirstOrDefault(a => a.RuleId == record.RuleId &&
-                                        (a.Status == AlarmStatus.Active || a.Status == AlarmStatus.Acknowledged));
-
-                if (existingAlarm is not null)
-                {
-                    // 已存在活跃报警，不创建新记录，只触发UI刷新
-                    _logger.LogDebug("已存在活跃报警 {AlarmId}，跳过重复保存", existingAlarm.Id);
-                    AlarmTriggered?.Invoke(this, new AlarmEventArgs(existingAlarm));
-                }
-                else
-                {
-                    // 新报警，添加到实时列表并保存到数据库
-                    _activeAlarms[alarmEvent.AlarmId] = record;
-                    _logger.LogInformation("保存新报警到数据库: AlarmId={AlarmId}", alarmEvent.AlarmId);
-                    await _repository.SaveAsync(record, alarmEvent.Rule.AlarmType, ct);
-                    AlarmTriggered?.Invoke(this, new AlarmEventArgs(record));
-                }
+            case AlarmCenterEventType.Raised:
+                AlarmTriggered?.Invoke(this, new AlarmEventArgs(record));
                 break;
 
-            case AlarmEventType.Acknowledged:
-                // 更新实时列表
-                if (_activeAlarms.TryGetValue(alarmEvent.AlarmId, out var ackedAlarm))
-                {
-                    ackedAlarm.Status = AlarmStatus.Acknowledged;
-                    ackedAlarm.AcknowledgedAt = alarmEvent.Timestamp;
-                }
-                // 更新数据库
-                _logger.LogInformation("更新报警为已确认: AlarmId={AlarmId}", alarmEvent.AlarmId);
-                await _repository.UpdateStatusAsync(alarmEvent.AlarmId,
-                    AlarmStatus.Acknowledged, alarmEvent.Timestamp, null, ct);
-                // 触发事件
+            case AlarmCenterEventType.Acknowledged:
                 AlarmAcknowledged?.Invoke(this, new AlarmEventArgs(record));
                 break;
 
-            case AlarmEventType.Cleared:
-                // 从实时列表移除
-                bool removed = _activeAlarms.TryRemove(alarmEvent.AlarmId, out _);
-                _logger.LogInformation("报警清除: AlarmId={AlarmId}, 从活跃列表移除={Removed}", alarmEvent.AlarmId, removed);
-                // 更新数据库
-                try
-                {
-                    await _repository.UpdateStatusAsync(alarmEvent.AlarmId,
-                        AlarmStatus.Cleared, null, alarmEvent.Timestamp, ct);
-                    _logger.LogInformation("数据库已更新报警状态为已清除: AlarmId={AlarmId}", alarmEvent.AlarmId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "更新数据库报警状态失败: AlarmId={AlarmId}", alarmEvent.AlarmId);
-                }
-                // 触发事件
+            case AlarmCenterEventType.Cleared:
+            case AlarmCenterEventType.Closed:
                 AlarmCleared?.Invoke(this, new AlarmEventArgs(record));
+                break;
+
+            case AlarmCenterEventType.Suppressed:
+            case AlarmCenterEventType.Shelved:
                 break;
         }
 
-        // 通知实时列表变更
         ActiveAlarmsChanged?.Invoke(this, EventArgs.Empty);
+        return Task.CompletedTask;
     }
 }
 
