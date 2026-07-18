@@ -1,0 +1,124 @@
+<UserControl x:Class="IndustrialDAQ.UI.Views.LoginDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             Width="400" Height="550"
+             Background="Transparent">
+
+    <UserControl.Resources>
+        <!-- Animations -->
+        <Storyboard x:Key="LoadAnimation">
+            <DoubleAnimation Storyboard.TargetName="MainBorder" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.4" />
+            <DoubleAnimation Storyboard.TargetName="MainBorder" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="30" To="0" Duration="0:0:0.4">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+
+    <UserControl.Triggers>
+        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+            <BeginStoryboard Storyboard="{StaticResource LoadAnimation}" />
+        </EventTrigger>
+    </UserControl.Triggers>
+
+    <Border x:Name="MainBorder" CornerRadius="12" Padding="30" Background="{DynamicResource PanelBgBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+        <Border.RenderTransform>
+            <TranslateTransform Y="0"/>
+        </Border.RenderTransform>
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="20" Opacity="0.3" ShadowDepth="5" Direction="270" Color="Black"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Close button -->
+            <Button Grid.Row="0" HorizontalAlignment="Right" Content="✕" Width="24" Height="24" Command="{Binding CancelCommand}"
+                    Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextMutedBrush}" Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="12">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource ComboBoxHoverBgBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <!-- Icon -->
+            <Border Grid.Row="1" Width="70" Height="70" CornerRadius="35" Background="#1A38BDF8" HorizontalAlignment="Center" Margin="0,10,0,20">
+                <TextBlock Text="🔐" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <!-- Title -->
+            <TextBlock Grid.Row="2" Text="权限验证" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+            <TextBlock Grid.Row="3" Text="执行此操作需要验证您的身份" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,30"/>
+
+            <!-- Inputs -->
+            <StackPanel Grid.Row="4" Margin="0,0,0,20">
+                <TextBlock Text="用户名" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,0,0,6"/>
+                <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" 
+                         Height="42" Padding="12,0" VerticalContentAlignment="Center"
+                         Background="{DynamicResource BrushBgTertiary}" BorderBrush="{DynamicResource BorderBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"/>
+
+                <TextBlock Text="密码" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" Margin="0,16,0,6"/>
+                <!-- We use a standard PasswordBox and code-behind to push to ViewModel, but for simplicity in MVVM, we bind to a standard TextBox as Password (or just use PasswordBox with behavior) -->
+                <!-- A simple text box mapped to Password for demo. In production use PasswordBox with an attached property. -->
+                <TextBox Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" 
+                         Height="42" Padding="12,0" VerticalContentAlignment="Center"
+                         Background="{DynamicResource BrushBgTertiary}" BorderBrush="{DynamicResource BorderBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"/>
+                
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource DangerBrush}" FontSize="13" Margin="0,10,0,0"
+                           Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </StackPanel>
+
+            <!-- Action Buttons -->
+            <Button Grid.Row="5" Content="登录" Command="{Binding LoginCommand}" 
+                    Height="44" Foreground="White" FontWeight="Bold" FontSize="15" Cursor="Hand" Margin="0,10,0,0">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Background" Value="{DynamicResource InfoBrush}"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#0284C7"/> <!-- Darker info -->
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </Grid>
+    </Border>
+</UserControl>

@@ -2,147 +2,205 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using IndustrialDAQ.Acquisition;
+using IndustrialDAQ.Core.Authorization;
 using IndustrialDAQ.Core.Models;
+using IndustrialDAQ.Core.ResourceTree;
 using IndustrialDAQ.Storage;
 using IndustrialDAQ.UI.Models;
-using Prism.Mvvm;
-using Prism.Navigation;
-using Prism.Commands;
+using IndustrialDAQ.UI.Services;
 using IndustrialDAQ.UI.Events;
 
 namespace IndustrialDAQ.UI.ViewModels;
 
-/// <summary>
-/// 设备详情 ViewModel — 展示单个设备的完整测点数据和状态信息。
-/// </summary>
 public class DeviceDetailViewModel : BindableBase, IDestructible
 {
     private readonly RealTimeStore _realTimeStore;
     private readonly AcquisitionHost _acquisitionHost;
     private readonly IDialogService _dialogService;
     private readonly IEventAggregator _eventAggregator;
+    private readonly IResourceTreeService _resourceTreeService;
+    private readonly IAuthManager _authManager;
+    private readonly IAuthorizationService _authorizationService;
     private CancellationTokenSource? _cts;
+    
+    // TagId -> TagDisplayItem mapping for fast real-time updates
     private readonly Dictionary<string, TagDisplayItem> _itemLookup = new();
 
-    /// <summary>设备分组列表（树状结构）。</summary>
-    public ObservableCollection<DeviceGroup> DeviceGroups { get; } = new();
-
-    private readonly Dictionary<string, string> _tagToDeviceId = new();
-    private readonly Dictionary<string, DeviceGroup> _deviceLookup = new();
-
-    private string _deviceName = "反应釜 #1";
-    /// <summary>当前设备名称。</summary>
-    public string DeviceName { get => _deviceName; set => SetProperty(ref _deviceName, value); }
-
-    private string _deviceStatus = "运行中";
-    /// <summary>设备状态文本。</summary>
-    public string DeviceStatus { get => _deviceStatus; set => SetProperty(ref _deviceStatus, value); }
-
-    private string _deviceStatusColor = "#10B981";
-    /// <summary>设备状态颜色。</summary>
-    public string DeviceStatusColor { get => _deviceStatusColor; set => SetProperty(ref _deviceStatusColor, value); }
-
-    private string _ipAddress = "192.168.1.101";
-    /// <summary>设备 IP 地址。</summary>
-    public string IpAddress { get => _ipAddress; set => SetProperty(ref _ipAddress, value); }
-
-    private string _protocol = "Mock";
-    /// <summary>通信协议。</summary>
-    public string Protocol { get => _protocol; set => SetProperty(ref _protocol, value); }
-
-    private string _cycleTime = "500 ms";
-    /// <summary>采集周期。</summary>
-    public string CycleTime { get => _cycleTime; set => SetProperty(ref _cycleTime, value); }
-
-    private string _lastError = "无";
-    /// <summary>最后错误信息。</summary>
-    public string LastError { get => _lastError; set => SetProperty(ref _lastError, value); }
+    public ObservableCollection<object> TreeRoots { get; } = new();
 
     public DelegateCommand<TagDisplayItem> WriteTagCommand { get; }
 
-    public DeviceDetailViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost, IDialogService dialogService, IEventAggregator eventAggregator)
+    public DeviceDetailViewModel(
+        RealTimeStore realTimeStore, 
+        AcquisitionHost acquisitionHost, 
+        IDialogService dialogService, 
+        IEventAggregator eventAggregator,
+        IResourceTreeService resourceTreeService,
+        IAuthManager authManager,
+        IAuthorizationService authorizationService)
     {
         _realTimeStore = realTimeStore ?? throw new ArgumentNullException(nameof(realTimeStore));
         _acquisitionHost = acquisitionHost ?? throw new ArgumentNullException(nameof(acquisitionHost));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
+        _resourceTreeService = resourceTreeService ?? throw new ArgumentNullException(nameof(resourceTreeService));
+        _authManager = authManager ?? throw new ArgumentNullException(nameof(authManager));
+        _authorizationService = authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
+        
         _cts = new CancellationTokenSource();
+        WriteTagCommand = new DelegateCommand<TagDisplayItem>(OnWriteTagAsync);
         
-        WriteTagCommand = new DelegateCommand<TagDisplayItem>(OnWriteTag);
-        
-        InitializeDeviceGroups();
+        InitializeTree();
 
         _ = SubscribeToChangesAsync(_cts.Token);
-        _ = StartConnectionCheckLoop(_cts.Token);
     }
 
-    private async Task StartConnectionCheckLoop(CancellationToken ct)
+    private void InitializeTree()
     {
-        try
+        TreeRoots.Clear();
+        _itemLookup.Clear();
+        
+        var snapshot = _resourceTreeService.Current;
+        
+        // 如果资源树数据库为空（尚未配置），则降级为使用采集主机设备数据
+        if (snapshot.Count == 0)
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            InitializeTreeFromAcquisitionHost();
+            return;
+        }
+        
+        foreach (var root in snapshot.Roots)
+        {
+            var nodeItem = BuildNodeItem(root, snapshot);
+            if (nodeItem != null)
             {
-                Application.Current?.Dispatcher.Invoke(() =>
-                {
-                foreach (var group in DeviceGroups)
-                {
-                    var driver = _acquisitionHost.GetDriver(group.DeviceId);
-                    bool isConnected = driver?.IsConnected ?? false;
-                    
-                    foreach (var tag in group.Tags)
-                    {
-                        if (isConnected)
-                        {
-                            // 恢复连接：Bad -> Good
-                            if (tag.Quality == "Bad") tag.Quality = "Good";
-                        }
-                        else
-                        {
-                            // 断开连接：非 Init -> Bad
-                            if (tag.Quality != "Bad" && tag.Quality != "Init")
-                            {
-                                tag.Quality = "Bad";
-                            }
-                        }
-                    }
-                }
-                });
+                TreeRoots.Add(nodeItem);
             }
         }
-        catch (OperationCanceledException) { }
     }
 
-    private void InitializeDeviceGroups()
+    /// <summary>
+    /// 当资源树数据库为空时的兜底方案：将 AcquisitionHost 的设备树映射为 ResourceTreeNodeItem 展示。
+    /// </summary>
+    private void InitializeTreeFromAcquisitionHost()
     {
         var devices = _acquisitionHost.GetDevices();
         foreach (var device in devices)
         {
-            var group = new DeviceGroup { DeviceId = device.Id, DeviceName = device.Name };
-            _deviceLookup[device.Id] = group;
-            DeviceGroups.Add(group);
+            var deviceGroup = new ResourceTreeNodeItem
+            {
+                NodeId = device.Id,
+                DisplayName = device.Name,
+                NodeType = ResourceType.Device,
+                Icon = "💻",
+                IconColor = "#FACC15",
+                IsExpanded = true
+            };
 
             foreach (var tag in device.Tags)
             {
-                _tagToDeviceId[tag.Id] = device.Id;
-
-                // 初始化占位项，使用户即使还没收到数据也能看到并展开树结构
                 var item = new TagDisplayItem(tag.Id)
                 {
                     TagName = tag.Name,
-                    Description = tag.Description,
+                    Description = tag.Description ?? $"{device.Name}/{tag.Name}",
                     Value = "-",
                     Quality = "Init",
                     Timestamp = "-",
                     CanWrite = tag.Access != TagAccess.Read
                 };
                 _itemLookup[tag.Id] = item;
-                group.Tags.Add(item);
+                deviceGroup.Children.Add(item);
             }
+
+            TreeRoots.Add(deviceGroup);
         }
     }
 
-    /// <inheritdoc />
+
+    private object? BuildNodeItem(ResourceNode node, ResourceTreeSnapshot snapshot)
+    {
+        if (node.ResourceType == ResourceType.Tag)
+        {
+            // For Tag, it maps to TagDisplayItem
+            // We need TagId. Let's assume TagId is node.Id or we extract it from Metadata.
+            // But wait, the existing code says TagId is what matches TagValue.TagId.
+            // We'll use node.Id as TagId.
+            bool canWrite = true; // Default, actual value depends on tag config
+            
+            // Try to find if tag exists in AcquisitionHost to determine write access
+            var devices = _acquisitionHost.GetDevices();
+            foreach (var d in devices)
+            {
+                var tag = d.Tags.FirstOrDefault(t => t.Id == node.Id);
+                if (tag != null)
+                {
+                    canWrite = tag.Access != TagAccess.Read;
+                    break;
+                }
+            }
+
+            var item = new TagDisplayItem(node.Id)
+            {
+                TagName = node.DisplayName,
+                Value = "-",
+                Quality = "Init",
+                Timestamp = "-",
+                CanWrite = canWrite,
+                // Store resource path in description or a new property if available
+                Description = node.Path.Value 
+            };
+            _itemLookup[node.Id] = item;
+            return item;
+        }
+        else
+        {
+            // For folders (Factory, Area, Line, Cell, Device)
+            var group = new ResourceTreeNodeItem
+            {
+                NodeId = node.Id,
+                DisplayName = node.DisplayName,
+                NodeType = node.ResourceType,
+                Icon = GetIconForType(node.ResourceType),
+                IconColor = GetColorForType(node.ResourceType),
+                IsExpanded = node.ResourceType == ResourceType.Device || node.ResourceType == ResourceType.Line || node.ResourceType == ResourceType.Factory || node.ResourceType == ResourceType.Area
+            };
+
+            foreach (var child in snapshot.GetChildren(node.Path))
+            {
+                var childItem = BuildNodeItem(child, snapshot);
+                if (childItem != null)
+                {
+                    group.Children.Add(childItem);
+                }
+            }
+            return group;
+        }
+    }
+
+    private string GetIconForType(ResourceType type)
+    {
+        return type switch
+        {
+            ResourceType.Factory => "🏭",
+            ResourceType.Area => "🏢",
+            ResourceType.Line => "🛣️",
+            ResourceType.Cell => "⚙️",
+            ResourceType.Device => "💻",
+            _ => "📂"
+        };
+    }
+
+    private string GetColorForType(ResourceType type)
+    {
+        return type switch
+        {
+            ResourceType.Factory => "#F43F5E",
+            ResourceType.Line => "#8B5CF6",
+            ResourceType.Device => "#FACC15",
+            _ => "#38BDF8"
+        };
+    }
+
     public void Destroy()
     {
         _cts?.Cancel();
@@ -154,70 +212,68 @@ public class DeviceDetailViewModel : BindableBase, IDestructible
         try
         {
             var reader = _realTimeStore.Subscribe();
-            await foreach (TagValue value in reader.ReadAllAsync(ct)
-                .ConfigureAwait(false))
+            await foreach (TagValue value in reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
-                Application.Current?.Dispatcher.Invoke(() => UpdateOrAdd(value));
+                Application.Current?.Dispatcher.Invoke(() => UpdateTagValue(value));
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
-    private void UpdateOrAdd(TagValue value)
+    private void UpdateTagValue(TagValue value)
     {
         if (_itemLookup.TryGetValue(value.TagId, out TagDisplayItem? item))
         {
-            item.TagName = value.TagName;
             item.Value = value.Value?.ToString() ?? "-";
             item.Quality = value.Quality.ToString();
             item.Timestamp = value.Timestamp.LocalDateTime.ToString("HH:mm:ss.fff");
         }
-        else
-        {
-            if (!_tagToDeviceId.TryGetValue(value.TagId, out string? deviceId))
-            {
-                // 如果是动态增加的测点，尝试查找所属设备
-                foreach (var device in _acquisitionHost.GetDevices())
-                {
-                    if (device.Tags.Any(t => t.Id == value.TagId))
-                    {
-                        deviceId = device.Id;
-                        _tagToDeviceId[value.TagId] = deviceId;
-                        break;
-                    }
-                }
-            }
-
-            if (deviceId != null && _deviceLookup.TryGetValue(deviceId, out var group))
-            {
-                bool canWrite = false;
-                var device = _acquisitionHost.GetDevices().FirstOrDefault(d => d.Id == deviceId);
-                var tag = device?.Tags.FirstOrDefault(t => t.Id == value.TagId);
-                if (tag != null)
-                {
-                    canWrite = tag.Access != TagAccess.Read;
-                }
-
-                item = new TagDisplayItem(value.TagId)
-                {
-                    TagName = value.TagName,
-                    Value = value.Value?.ToString() ?? "-",
-                    Quality = value.Quality.ToString(),
-                    Timestamp = value.Timestamp.LocalDateTime.ToString("HH:mm:ss.fff"),
-                    CanWrite = canWrite
-                };
-                _itemLookup[value.TagId] = item;
-                group.Tags.Add(item);
-            }
-        }
     }
 
-    private void OnWriteTag(TagDisplayItem? item)
+    private async void OnWriteTagAsync(TagDisplayItem? item)
     {
         if (item == null) return;
         
+        // 当权限快照为空（未配置任何权限策略）时，直接放行（开放模式）
+        bool permissionConfigured = _authorizationService.Current.Policies.Count > 0;
+        
+        if (permissionConfigured)
+        {
+            // 权限验证
+            bool pathValid = ResourcePath.TryParse(item.Description, out var path);
+            bool hasPermission = pathValid && 
+                await _authorizationService.CanAsync(_authManager.CurrentUser.ToSubject(), path, "Write");
+            
+            if (!hasPermission)
+            {
+                // Popup Login Dialog
+                bool loginSuccess = false;
+                _dialogService.ShowDialog("LoginDialog", null, result =>
+                {
+                    if (result.Result == ButtonResult.OK)
+                    {
+                        loginSuccess = true;
+                    }
+                });
+
+                if (!loginSuccess) return;
+
+                // Recheck permission after login
+                hasPermission = pathValid &&
+                    await _authorizationService.CanAsync(_authManager.CurrentUser.ToSubject(), path, "Write");
+                if (!hasPermission)
+                {
+                    _eventAggregator.GetEvent<NotificationEvent>().Publish(new NotificationMessage
+                    {
+                        Title = "权限拒绝",
+                        Message = "当前用户没有向此测点写入数据的权限。",
+                        Type = NotificationType.Error
+                    });
+                    return;
+                }
+            }
+        }
+
         DeviceConfig? targetDevice = null;
         TagPoint? targetTag = null;
         
@@ -235,7 +291,7 @@ public class DeviceDetailViewModel : BindableBase, IDestructible
 
         var parameters = new DialogParameters
         {
-            { "TagName", string.IsNullOrWhiteSpace(item.Description) ? item.TagName : item.Description },
+            { "TagName", item.TagName },
             { "DataType", targetTag.DataType },
             { "CurrentValue", item.Value }
         };
@@ -313,16 +369,25 @@ public class DeviceDetailViewModel : BindableBase, IDestructible
     }
 }
 
-/// <summary>
-/// 设备分组项，用于 TreeView。
-/// </summary>
-public class DeviceGroup : BindableBase
+public class ResourceTreeNodeItem : BindableBase
 {
-    private string _deviceName = string.Empty;
-    public string DeviceName { get => _deviceName; set => SetProperty(ref _deviceName, value); }
+    private string _nodeId = string.Empty;
+    public string NodeId { get => _nodeId; set => SetProperty(ref _nodeId, value); }
 
-    private string _deviceId = string.Empty;
-    public string DeviceId { get => _deviceId; set => SetProperty(ref _deviceId, value); }
+    private string _displayName = string.Empty;
+    public string DisplayName { get => _displayName; set => SetProperty(ref _displayName, value); }
 
-    public ObservableCollection<TagDisplayItem> Tags { get; } = new();
+    private ResourceType _nodeType;
+    public ResourceType NodeType { get => _nodeType; set => SetProperty(ref _nodeType, value); }
+
+    private string _icon = "📂";
+    public string Icon { get => _icon; set => SetProperty(ref _icon, value); }
+
+    private string _iconColor = "#FACC15";
+    public string IconColor { get => _iconColor; set => SetProperty(ref _iconColor, value); }
+    
+    private bool _isExpanded;
+    public bool IsExpanded { get => _isExpanded; set => SetProperty(ref _isExpanded, value); }
+
+    public ObservableCollection<object> Children { get; } = new();
 }

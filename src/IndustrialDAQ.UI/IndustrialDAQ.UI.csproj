@@ -6,6 +6,7 @@
     <ProjectReference Include="..\IndustrialDAQ.Alarm\IndustrialDAQ.Alarm.csproj" />
     <ProjectReference Include="..\IndustrialDAQ.Infrastructure\IndustrialDAQ.Infrastructure.csproj" />
     <ProjectReference Include="..\IndustrialDAQ.Storage\IndustrialDAQ.Storage.csproj" />
+    <ProjectReference Include="..\IndustrialDAQ.Trend\IndustrialDAQ.Trend.csproj" />
     <ProjectReference Include="..\..\Plugins\Drivers.Modbus\Drivers.Modbus.csproj" />
     <ProjectReference Include="..\..\Plugins\Drivers.OpcUA\Drivers.OpcUA.csproj" />
     <ProjectReference Include="..\..\Plugins\Drivers.S7\Drivers.S7.csproj" />
@@ -34,7 +35,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -121,9 +121,18 @@ public class AlarmRecordViewModel : BindableBase
     {
         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
         {
-            var item = AlarmRecordItem.FromDomain(e.Record);
-            Alarms.Insert(0, item);
-            ApplyFilter();
+            var existingItem = Alarms.FirstOrDefault(a => a.Id == e.Record.Id);
+            if (existingItem is not null)
+            {
+                existingItem.Status = "活跃";
+                ApplyFilter();
+            }
+            else
+            {
+                var item = AlarmRecordItem.FromDomain(e.Record);
+                Alarms.Insert(0, item);
+                ApplyFilter();
+            }
         });
     }
 

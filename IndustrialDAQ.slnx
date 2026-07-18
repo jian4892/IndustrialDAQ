@@ -14,6 +14,7 @@
     <Project Path="src/IndustrialDAQ.Infrastructure/IndustrialDAQ.Infrastructure.csproj" />
     <Project Path="src/IndustrialDAQ.Processing/IndustrialDAQ.Processing.csproj" />
     <Project Path="src/IndustrialDAQ.Storage/IndustrialDAQ.Storage.csproj" />
+    <Project Path="src/IndustrialDAQ.Trend/IndustrialDAQ.Trend.csproj" />
     <Project Path="src/IndustrialDAQ.UI/IndustrialDAQ.UI.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,188 @@
+<UserControl x:Class="IndustrialDAQ.UI.Views.AddDeviceTemplateDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             Width="700" Height="520"
+             Background="Transparent"
+             Foreground="{DynamicResource TextPrimaryBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Background" Value="{DynamicResource BrushBgSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSecondaryBrush}"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Background" Value="{DynamicResource BrushBgSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSecondaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <!-- 主体边框和背景，绑定你设置的颜色 -->
+                            <Border x:Name="Border" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="{TemplateBinding BorderBrush}" 
+                            BorderThickness="1" CornerRadius="3"/>
+
+                            <!-- 右侧下拉箭头按钮 (这里做了极简处理) -->
+                            <ToggleButton x:Name="ToggleButton" 
+                                  Focusable="False" 
+                                  IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" 
+                                  ClickMode="Press" 
+                                  Background="Transparent" BorderThickness="0" 
+                                  HorizontalAlignment="Right" Width="24">
+                                <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </ToggleButton>
+
+                            <!-- 选中的文本显示区 -->
+                            <ContentPresenter x:Name="ContentSite" 
+                                      IsHitTestVisible="False" 
+                                      Content="{TemplateBinding SelectionBoxItem}" 
+                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" 
+                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" 
+                                      Margin="{TemplateBinding Padding}" 
+                                      VerticalAlignment="Center" HorizontalAlignment="Left" />
+
+                            <!-- 下拉弹窗 -->
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                <Grid x:Name="DropDown" SnapsToDevicePixels="True" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder" Background="#2D2D2D" BorderThickness="1" BorderBrush="#444444"/>
+                                    <ScrollViewer Margin="1" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="20,6"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="Background" Value="{DynamicResource BrushBgSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="0.8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource CardBgBrush}"
+            BorderBrush="{DynamicResource BorderSecondaryBrush}"
+            BorderThickness="1" CornerRadius="8" Margin="8">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.4" Direction="270" ShadowDepth="4"/>
+        </Border.Effect>
+
+        <Grid Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题 -->
+            <TextBlock Text="新增设备模板" FontSize="16" FontWeight="Bold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,16"/>
+
+            <!-- 设备选择 -->
+            <Grid Grid.Row="1" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="来源设备" Grid.Column="0" Margin="0,0,8,0"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableDevices}"
+                          SelectedItem="{Binding SelectedDevice}"
+                          DisplayMemberPath="DisplayName" Margin="0,0,16,0"/>
+                <TextBlock Text="模板名称" Grid.Column="2" Margin="0,0,8,0"/>
+                <TextBox Grid.Column="3" Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}"/>
+            </Grid>
+
+            <!-- 驱动类型 -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+                <TextBlock Text="驱动类型: " Margin="0,0,8,0"/>
+                <TextBlock Text="{Binding DriverType}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+            </StackPanel>
+
+            <!-- 数据点配置列表 -->
+            <DataGrid Grid.Row="3" ItemsSource="{Binding DataPointConfigs}"
+                      AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                      IsReadOnly="False" HeadersVisibility="Column"
+                      Background="{DynamicResource BrushBgSecondary}"
+                      BorderBrush="{DynamicResource BorderSecondaryBrush}"
+                      Foreground="{DynamicResource TextPrimaryBrush}"
+                      GridLinesVisibility="Horizontal" Margin="0,0,0,12">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="数据点名称" Binding="{Binding Name, Mode=OneWay}" IsReadOnly="True" Width="140"/>
+                    <DataGridTextColumn Header="数据类型" Binding="{Binding DataTypeText, Mode=OneWay}" IsReadOnly="True" Width="80"/>
+                    <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTemplateColumn Header="报警模板" Width="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding AlarmTemplateOptions}"
+                                          SelectedItem="{Binding SelectedAlarmOption, UpdateSourceTrigger=PropertyChanged}"
+                                          DisplayMemberPath="DisplayName" Margin="2"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="趋势" Width="60">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding EnableTrend, UpdateSourceTrigger=PropertyChanged}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- 错误消息 -->
+            <TextBlock Grid.Row="4" Text="{Binding ErrorMessage}" Foreground="#EF4444"
+                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
+                       Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+            <!-- 按钮 -->
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="取消" Command="{Binding CancelCommand}"/>
+                <Button Content="保存模板" Command="{Binding ConfirmCommand}"
+                        Background="{DynamicResource InfoBgBrush}" Foreground="{DynamicResource InfoBrush}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

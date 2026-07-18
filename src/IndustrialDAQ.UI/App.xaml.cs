@@ -2,14 +2,25 @@
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Acquisition.Mocks;
 using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Alarm.Center;
+using IndustrialDAQ.Alarm.RuleBuilder;
+using IndustrialDAQ.Alarm.RuleEngine;
+using IndustrialDAQ.Alarm.StateMachine;
 using IndustrialDAQ.Core;
+using IndustrialDAQ.Core.Authorization;
 using IndustrialDAQ.Core.Configuration;
 using IndustrialDAQ.Core.Interfaces;
 using IndustrialDAQ.Core.Models;
+using IndustrialDAQ.Core.ResourceTree;
 using IndustrialDAQ.Infrastructure;
+using IndustrialDAQ.Infrastructure.Alarms;
+using IndustrialDAQ.Infrastructure.Authorization;
+using IndustrialDAQ.Infrastructure.ResourceTree;
 using IndustrialDAQ.Storage;
+using IndustrialDAQ.Trend;
 using IndustrialDAQ.UI.ViewModels;
 using IndustrialDAQ.UI.Views;
+using IndustrialDAQ.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -42,23 +53,58 @@ public partial class App : PrismApplication
         containerRegistry.RegisterSingleton<HistoryWriter>();
         containerRegistry.RegisterSingleton<MainWindowViewModel>();
 
-        // 报警系统服务
-        containerRegistry.RegisterSingleton<AlarmEventBus>();
-        containerRegistry.RegisterSingleton<AlarmEngine>();
+        // 报警系统服务（统一走新链路，AlarmManager 仅作为 UI 兼容门面）
         containerRegistry.RegisterSingleton<AlarmHistoryRepository>();
         containerRegistry.RegisterSingleton<AlarmManager>();
 
+        // 趋势引擎服务
+        containerRegistry.RegisterSingleton<TrendDataStore>();
+        containerRegistry.RegisterSingleton<TrendEngine>();
+
+        // 设备模板仓储
+        containerRegistry.RegisterSingleton<DeviceTemplateRepository>();
+
+        // Runtime resource tree. Later modules use this same tree for menus,
+        // devices, tags, alarms, rules and inherited permissions.
+        containerRegistry.RegisterSingleton<IResourceTreeRepository, ResourceTreeRepository>();
+        containerRegistry.RegisterSingleton<IResourceTreeService, ResourceTreeService>();
+        
+        containerRegistry.RegisterSingleton<IUserRepository, UserRepository>();
+        containerRegistry.RegisterSingleton<IAuthManager, AuthManager>();
+
+        containerRegistry.RegisterSingleton<IAuthorizationRepository, AuthorizationRepository>();
+        containerRegistry.RegisterSingleton<IAuthorizationService, AuthorizationService>();
+
+        // Database-backed alarm definitions. RuleBuilder will consume these
+        // definitions and build executable workflows in the next module.
+        containerRegistry.RegisterSingleton<IAlarmDefinitionRepository, AlarmDefinitionRepository>();
+        containerRegistry.RegisterSingleton<IAlarmDefinitionService, AlarmDefinitionService>();
+        containerRegistry.RegisterSingleton<IAlarmRuleBuilder, AlarmRuleBuilder>();
+        containerRegistry.RegisterSingleton<IAlarmRuleSignalBus, AlarmRuleSignalBus>();
+        containerRegistry.RegisterSingleton<IRuleEngineService, RuleEngineService>();
+        containerRegistry.RegisterSingleton<IAlarmStateTransitionBus, AlarmStateTransitionBus>();
+        containerRegistry.RegisterSingleton<IAlarmStateMachineService, AlarmStateMachineService>();
+        containerRegistry.RegisterSingleton<IAlarmCenterEventBus, AlarmCenterEventBus>();
+        containerRegistry.RegisterSingleton<IAlarmCenter, AlarmCenter>();
+
         // ViewModel 注册（支持构造函数注入）
         containerRegistry.Register<AlarmRecordViewModel>();
+        containerRegistry.Register<TrendViewModel>();
 
         containerRegistry.RegisterForNavigation<DashboardView>();
         containerRegistry.RegisterForNavigation<ProductionMonitorView>();
         containerRegistry.RegisterForNavigation<DeviceDetailView>();
         containerRegistry.RegisterForNavigation<AlarmRecordView>();
+        containerRegistry.RegisterForNavigation<TrendView>();
+        containerRegistry.RegisterForNavigation<DeviceTemplateView>();
         containerRegistry.RegisterForNavigation<SystemSettingsView>();
+        containerRegistry.RegisterForNavigation<AlarmRuleConfigView, AlarmRuleConfigViewModel>();
 
         containerRegistry.RegisterDialogWindow<FramelessDialogWindow>();
         containerRegistry.RegisterDialog<WriteTagDialog, WriteTagDialogViewModel>();
+        containerRegistry.RegisterDialog<CreateDeviceDialog, CreateDeviceDialogViewModel>();
+        containerRegistry.RegisterDialog<AddDeviceTemplateDialog, AddDeviceTemplateDialogViewModel>();
+        containerRegistry.RegisterDialog<LoginDialog, LoginDialogViewModel>();
     }
 
     protected override IContainerExtension CreateContainerExtension()
@@ -98,8 +144,17 @@ public partial class App : PrismApplication
         var dbFactory = Container.Resolve<IDbContextFactory<DaqDbContext>>();
         using (var db = dbFactory.CreateDbContext())
         {
-            db.Database.EnsureCreated();           
+            db.Database.EnsureCreated();
+            // 为已有数据库补建新增的表（EnsureCreated 不会为已有库添加新表）
+            EnsureTemplateTablesExist(db);
         }
+
+        // ── 初始化内置设备模板（首次运行时写入数据库）──
+        var templateRepo = Container.Resolve<DeviceTemplateRepository>();
+        _ = templateRepo.InitializeBuiltInTemplatesAsync();
+
+        var authorizationService = Container.Resolve<IAuthorizationService>();
+        _ = authorizationService.ReloadAsync(CancellationToken.None);
 
         // ── 注册所有协议驱动 ──
         var driverFactory = Container.Resolve<IDriverFactory>();
@@ -136,13 +191,22 @@ public partial class App : PrismApplication
         _ = historyWriter.StartAsync(CancellationToken.None);
 
         // ── 启动报警系统 ──
-        var alarmEngine = Container.Resolve<AlarmEngine>();
         var alarmManager = Container.Resolve<AlarmManager>();
-        _ = alarmEngine.StartAsync(CancellationToken.None);
+        var ruleEngineService = Container.Resolve<IRuleEngineService>();
+        var alarmStateMachineService = Container.Resolve<IAlarmStateMachineService>();
+        var alarmCenter = Container.Resolve<IAlarmCenter>();
         _ = alarmManager.StartAsync(CancellationToken.None);
+        _ = ruleEngineService.StartAsync(CancellationToken.None);
+        _ = alarmStateMachineService.StartAsync(CancellationToken.None);
+        _ = alarmCenter.StartAsync(CancellationToken.None);
 
         // ── 注册测试报警规则 ──
         RegisterTestAlarmRules(alarmManager);
+
+        // ── 启动趋势引擎 ──
+        var trendEngine = Container.Resolve<TrendEngine>();
+        _ = trendEngine.StartAsync(CancellationToken.None);
+        RegisterTrendTags(trendEngine, Container.Resolve<IAlarmDefinitionService>());
 
         // ── 加载 JSON 配置并启动设备 ──
         _ = LoadAndStartDevicesAsync(acquisitionHost, historyWriter);
@@ -153,7 +217,179 @@ public partial class App : PrismApplication
     }
 
     /// <summary>
-    /// 注册测试报警规则 — 用于开发调试。
+    /// 为已有数据库补建模板相关表（EnsureCreated 不会为已有库添加新表）。
+    /// </summary>
+    private static void EnsureTemplateTablesExist(DaqDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            conn.Open();
+
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = @"
+            -- 迁移：重建表以修正列定义
+            DROP TABLE IF EXISTS data_point_templates;
+            DROP TABLE IF EXISTS trend_templates;
+            DROP TABLE IF EXISTS device_templates;
+
+            CREATE TABLE IF NOT EXISTS device_templates (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TemplateId TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                DriverType TEXT NOT NULL,
+                IsBuiltIn INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_device_templates_TemplateId ON device_templates(TemplateId);
+            CREATE INDEX IF NOT EXISTS IX_device_templates_IsBuiltIn ON device_templates(IsBuiltIn);
+
+            CREATE TABLE IF NOT EXISTS data_point_templates (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                DeviceTemplateId INTEGER NOT NULL,
+                TemplateId TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                DataType INTEGER NOT NULL,
+                Unit TEXT NOT NULL DEFAULT '',
+                AlarmTemplateId TEXT,
+                TrendTemplateId TEXT,
+                FOREIGN KEY (DeviceTemplateId) REFERENCES device_templates(Id)
+            );
+            CREATE INDEX IF NOT EXISTS IX_data_point_templates_DeviceTemplateId ON data_point_templates(DeviceTemplateId);
+            CREATE INDEX IF NOT EXISTS IX_data_point_templates_TemplateId ON data_point_templates(TemplateId);
+
+            CREATE TABLE IF NOT EXISTS alarm_templates (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TemplateId TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                ApplicableDataType INTEGER NOT NULL,
+                Unit TEXT NOT NULL DEFAULT '',
+                HighThreshold REAL NOT NULL DEFAULT 0,
+                HighHighThreshold REAL NOT NULL DEFAULT 0,
+                LowThreshold REAL NOT NULL DEFAULT 0,
+                LowLowThreshold REAL NOT NULL DEFAULT 0,
+                Hysteresis REAL NOT NULL DEFAULT 0,
+                Severity INTEGER NOT NULL DEFAULT 1,
+                CooldownSeconds INTEGER NOT NULL DEFAULT 60,
+                SupportedAlarmTypesJson TEXT NOT NULL DEFAULT '[]',
+                IsBuiltIn INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_alarm_templates_TemplateId ON alarm_templates(TemplateId);
+            CREATE INDEX IF NOT EXISTS IX_alarm_templates_IsBuiltIn ON alarm_templates(IsBuiltIn);
+
+            CREATE TABLE IF NOT EXISTS alarm_definitions (
+                Id TEXT PRIMARY KEY,
+                RuleId TEXT NOT NULL,
+                AlarmCode TEXT NOT NULL,
+                ResourcePath TEXT,
+                TargetResourcePath TEXT,
+                TagId TEXT NOT NULL DEFAULT '',
+                TagName TEXT NOT NULL DEFAULT '',
+                AlarmType TEXT NOT NULL DEFAULT 'High',
+                Operator TEXT NOT NULL DEFAULT 'GreaterThan',
+                Threshold REAL NOT NULL DEFAULT 0,
+                Deadband REAL NOT NULL DEFAULT 0,
+                ConditionExpression TEXT NOT NULL,
+                ConditionsJson TEXT NOT NULL DEFAULT '[]',
+                ClearExpression TEXT,
+                SuppressionExpression TEXT,
+                ExpressionJoin TEXT NOT NULL DEFAULT 'And',
+                DelayMs INTEGER NOT NULL DEFAULT 0,
+                Hysteresis REAL NOT NULL DEFAULT 0,
+                Severity TEXT NOT NULL DEFAULT 'Warning',
+                Title TEXT NOT NULL DEFAULT '',
+                MessageTemplate TEXT NOT NULL DEFAULT '',
+                Source TEXT NOT NULL DEFAULT '',
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                AckPolicy TEXT NOT NULL DEFAULT 'Required',
+                ClearPolicy TEXT NOT NULL DEFAULT 'AutoClearWhenConditionFalse',
+                CooldownSeconds INTEGER NOT NULL DEFAULT 60,
+                WorkflowType TEXT NOT NULL DEFAULT 'Expression',
+                WorkflowKey TEXT NOT NULL DEFAULT 'default',
+                MetadataJson TEXT,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_alarm_definitions_RuleId ON alarm_definitions(RuleId);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_AlarmCode ON alarm_definitions(AlarmCode);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_ResourcePath ON alarm_definitions(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TargetResourcePath ON alarm_definitions(TargetResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TagId ON alarm_definitions(TagId);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_IsEnabled ON alarm_definitions(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_alarm_definitions_TargetResourcePath_AlarmCode ON alarm_definitions(TargetResourcePath, AlarmCode);
+
+            CREATE TABLE IF NOT EXISTS trend_templates (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TemplateId TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                Unit TEXT NOT NULL DEFAULT '',
+                YMin REAL,
+                YMax REAL,
+                BufferCapacity INTEGER NOT NULL DEFAULT 3600,
+                WindowSeconds INTEGER NOT NULL DEFAULT 300,
+                LineColor TEXT NOT NULL DEFAULT '#3B82F6',
+                ShowAlarmLines INTEGER NOT NULL DEFAULT 1,
+                StrokeThickness REAL NOT NULL DEFAULT 2,
+                ShowGeometry INTEGER NOT NULL DEFAULT 0,
+                IsBuiltIn INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_trend_templates_TemplateId ON trend_templates(TemplateId);
+            CREATE INDEX IF NOT EXISTS IX_trend_templates_IsBuiltIn ON trend_templates(IsBuiltIn);
+
+            -- 运行时资源树表：存储工厂、产线、设备、标签等所有资源的层级关系
+            CREATE TABLE IF NOT EXISTS resource_nodes (
+                Id TEXT PRIMARY KEY,
+                ParentId TEXT,
+                ResourcePath TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                DisplayName TEXT NOT NULL,
+                ResourceType TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                MetadataJson TEXT,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_resource_nodes_ResourcePath ON resource_nodes(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ParentId ON resource_nodes(ParentId);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ResourceType ON resource_nodes(ResourceType);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_IsEnabled ON resource_nodes(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_resource_nodes_ParentId_SortOrder ON resource_nodes(ParentId, SortOrder);
+
+            CREATE TABLE IF NOT EXISTS permission_policies (
+                Id TEXT PRIMARY KEY,
+                SubjectType TEXT NOT NULL,
+                SubjectId TEXT NOT NULL,
+                ResourcePath TEXT NOT NULL,
+                Action TEXT NOT NULL,
+                Effect TEXT NOT NULL,
+                Inherit INTEGER NOT NULL DEFAULT 1,
+                Priority INTEGER NOT NULL DEFAULT 0,
+                ConditionJson TEXT,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                Version INTEGER NOT NULL DEFAULT 1,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectId ON permission_policies(SubjectId);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectType ON permission_policies(SubjectType);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_ResourcePath ON permission_policies(ResourcePath);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_Action ON permission_policies(Action);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_IsEnabled ON permission_policies(IsEnabled);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_SubjectType_SubjectId_Action ON permission_policies(SubjectType, SubjectId, Action);
+            CREATE INDEX IF NOT EXISTS IX_permission_policies_ResourcePath_Action ON permission_policies(ResourcePath, Action);
+        ";
+        cmd.ExecuteNonQuery();
+
+        Log.Information("模板相关表已确保存在");
+    }
+
+    /// <summary>
+    /// 注册测试报警规则到新报警定义仓储，用于开发调试。
     /// TagId 匹配 production-line.json 中的实际配置。
     /// </summary>
     private void RegisterTestAlarmRules(AlarmManager alarmManager)
@@ -163,13 +399,14 @@ public partial class App : PrismApplication
             // ═══ S7-1500 PLC (OpcUA) 报警规则 ═══
 
             // 高限报警 — 灌装液位达到或超过 700 mL
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-fill-high",
+                AlarmCode = "FILL_LEVEL_HIGH",
                 TagId = "tag-filling-actuallevel",
                 TagName = "Filling.ActualLevel",
                 AlarmType = AlarmType.High,
-                Threshold = 699.0,  // >= 700 报警（使用 699 配合 > 判断）
+                ConditionExpression = "Value >= 700",
                 Hysteresis = 30.0,  // 报警后需降到 670 以下才恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "灌装液位偏高",
@@ -178,14 +415,14 @@ public partial class App : PrismApplication
                 CooldownSeconds = 60  // 60秒冷却，防止重复报警
             },
             // 高高限报警 — 灌装液位达到或超过 800 mL（溢出风险）
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-fill-highhigh",
+                AlarmCode = "FILL_LEVEL_HIGH_HIGH",
                 TagId = "tag-filling-actuallevel",
                 TagName = "Filling.ActualLevel",
                 AlarmType = AlarmType.HighHigh,
-                Threshold = 799.0,  // >= 800 报警
-                HighHighThreshold = 799.0,
+                ConditionExpression = "Value >= 800",
                 Hysteresis = 30.0,  // 报警后需降到 770 以下才恢复
                 Severity = AlarmSeverity.Critical,
                 Title = "灌装液位超高（溢出风险）",
@@ -194,42 +431,46 @@ public partial class App : PrismApplication
                 CooldownSeconds = 60  // 60秒冷却，防止重复报警
             },
             // 高限报警 — 传送速度超过 25 m/min
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-speed-high",
+                AlarmCode = "CONVEYOR_SPEED_HIGH",
                 TagId = "tag-conveyor-actualspeed",
                 TagName = "Conveyor.ActualSpeed",
                 AlarmType = AlarmType.High,
-                Threshold = 25.0,
+                ConditionExpression = "Value > 25",
                 Hysteresis = 2.0,  // >25 报警, <23 恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "传送速度偏高",
-                MessageTemplate = "传送速度 {Value} m/min 超过 {Threshold} m/min",
+                MessageTemplate = "传送速度 {Value} m/min 超过 25 m/min",
                 Source = "灌装产线 S7-1500",
                 CooldownSeconds = 15
             },
             // 低限报警 — 传送速度低于 5 m/min
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-speed-low",
+                AlarmCode = "CONVEYOR_SPEED_LOW",
                 TagId = "tag-conveyor-actualspeed",
                 TagName = "Conveyor.ActualSpeed",
                 AlarmType = AlarmType.Low,
-                Threshold = 5.0,
+                ConditionExpression = "Value < 5",
                 Hysteresis = 2.0,  // <5 报警, >7 恢复
                 Severity = AlarmSeverity.Warning,
                 Title = "传送速度偏低",
-                MessageTemplate = "传送速度 {Value} m/min 低于 {Threshold} m/min",
+                MessageTemplate = "传送速度 {Value} m/min 低于 5 m/min",
                 Source = "灌装产线 S7-1500",
                 CooldownSeconds = 15
             },
             // 布尔报警 — 急停按钮触发
-            new AlarmRule
+            new AlarmDefinition
             {
                 RuleId = "alm-estop",
+                AlarmCode = "LINE_ESTOP_ACTIVE",
                 TagId = "tag-line-estop",
                 TagName = "Line.EStop",
                 AlarmType = AlarmType.Bool,
+                ConditionExpression = "Value == true",
                 Severity = AlarmSeverity.Critical,
                 Title = "急停按钮已触发",
                 MessageTemplate = "产线急停按钮已按下，请立即检查！",
@@ -243,47 +484,130 @@ public partial class App : PrismApplication
     }
 
     /// <summary>
-    /// 从 JSON 配置文件加载设备并启动采集。
+    /// 注册趋势跟踪 Tag，并从新报警定义快照中生成趋势报警线。
+    /// </summary>
+    private void RegisterTrendTags(TrendEngine trendEngine, IAlarmDefinitionService definitionService)
+    {
+        // 为所有模拟量读取 Tag 注册趋势跟踪
+        var analogTags = new[] { "tag-filling-actuallevel", "tag-conveyor-actualspeed" };
+        var tagNames = new Dictionary<string, string>
+        {
+            ["tag-filling-actuallevel"] = "Filling.ActualLevel",
+            ["tag-conveyor-actualspeed"] = "Conveyor.ActualSpeed"
+        };
+        var tagUnits = new Dictionary<string, string>
+        {
+            ["tag-filling-actuallevel"] = "mL",
+            ["tag-conveyor-actualspeed"] = "m/min"
+        };
+        var tagColors = new Dictionary<string, string>
+        {
+            ["tag-filling-actuallevel"] = "#3B82F6",
+            ["tag-conveyor-actualspeed"] = "#10B981"
+        };
+
+        foreach (var tagId in analogTags)
+        {
+            var template = new TrendTemplate
+            {
+                TemplateId = $"trend-{tagId}",
+                Name = tagNames.GetValueOrDefault(tagId, tagId),
+                Unit = tagUnits.GetValueOrDefault(tagId, ""),
+                YMin = 0,
+                YMax = tagId == "tag-filling-actuallevel" ? 1000 : 50,
+                BufferCapacity = 3600,
+                WindowSeconds = 300,
+                LineColor = tagColors.GetValueOrDefault(tagId, "#3B82F6"),
+                ShowAlarmLines = true,
+                StrokeThickness = 2,
+                ShowGeometry = false
+            };
+            trendEngine.RegisterTag(tagId, template);
+        }
+
+        // 从新链路已加载的报警定义添加报警线
+        var rules = definitionService.Current.Definitions;
+        trendEngine.AddAlarmLinesFromRules(rules);
+        Log.Information("已注册 {Count} 个趋势 Tag，{LineCount} 条报警线", analogTags.Length, trendEngine.AlarmLines.Count);
+    }
+
+    /// <summary>
+    /// 从配置目录中所有 JSON 文件加载设备并启动采集。
     /// </summary>
     private async Task LoadAndStartDevicesAsync(AcquisitionHost host, HistoryWriter writer)
     {
         try
         {
-            string configPath = FindConfigFile("config/production-line.json");
-            if (!File.Exists(configPath))
+            string configDir = FindConfigDirectory("config");
+            if (!Directory.Exists(configDir))
             {
-                Log.Warning("配置文件 {Path} 不存在，使用 Mock 设备", configPath);
+                Log.Warning("配置目录 {Path} 不存在，使用 Mock 设备", configDir);
                 StartMockDevices(host, writer);
                 return;
             }
 
-            var deviceConfigs = await DeviceConfigurationLoader.LoadFromFileAsync(configPath);
-            foreach (var config in deviceConfigs)
+            var jsonFiles = Directory.GetFiles(configDir, "*.json");
+            if (jsonFiles.Length == 0)
             {
-                var readableTags = config.Tags.ToList();
-                writer.RegisterTags(readableTags);
+                Log.Warning("配置目录 {Path} 中无 JSON 文件，使用 Mock 设备", configDir);
+                StartMockDevices(host, writer);
+                return;
+            }
 
-                try
+            int startedCount = 0;
+            foreach (var filePath in jsonFiles)
+            {
+                var deviceConfigs = await DeviceConfigurationLoader.LoadFromFileAsync(filePath);
+                foreach (var config in deviceConfigs)
                 {
-                    await host.StartDeviceAsync(config);
-                    Log.Information("设备 {Name} [{DriverType}] 采集已启动", config.Name, config.DriverType);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "设备 {Name} [{DriverType}] 启动失败: {Message}",
-                        config.Name, config.DriverType, ex.Message);
-                    Log.Warning("提示: 如无真实 PLC 设备，请检查 IP 地址和网络连接");
+                    var readableTags = config.Tags.ToList();
+                    writer.RegisterTags(readableTags);
+
+                    try
+                    {
+                        await host.StartDeviceAsync(config);
+                        Log.Information("设备 {Name} [{DriverType}] 采集已启动 (来自 {File})",
+                            config.Name, config.DriverType, Path.GetFileName(filePath));
+                        startedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "设备 {Name} [{DriverType}] 启动失败: {Message}",
+                            config.Name, config.DriverType, ex.Message);
+                    }
                 }
             }
 
-            // 启动文件监听
-            StartConfigurationWatcher(configPath, host, writer);
+            if (startedCount == 0)
+            {
+                Log.Warning("无设备成功启动，使用 Mock 设备");
+                StartMockDevices(host, writer);
+            }
+
+            // 启动目录监听（监控所有 JSON 文件变更）
+            StartConfigurationWatcher(configDir, host, writer);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "加载配置文件失败，使用 Mock 设备");
             StartMockDevices(host, writer);
         }
+    }
+
+    /// <summary>
+    /// 向上查找配置目录（从 AppContext.BaseDirectory 开始）。
+    /// </summary>
+    private static string FindConfigDirectory(string relativePath)
+    {
+        var dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 8; i++)
+        {
+            string candidate = Path.Combine(dir, relativePath);
+            if (Directory.Exists(candidate)) return candidate;
+            dir = Path.GetDirectoryName(dir)!;
+            if (dir is null) break;
+        }
+        return relativePath;
     }
 
     /// <summary>
@@ -333,59 +657,29 @@ public partial class App : PrismApplication
         _ = host.StartDeviceAsync(device2);
     }
 
-    /// <summary>
-    /// 向上查找配置文件（从 AppContext.BaseDirectory 开始）。
-    /// </summary>
-    private static string FindConfigFile(string relativePath)
-    {
-        var dir = AppContext.BaseDirectory;
-        for (int i = 0; i < 8; i++)
-        {
-            string candidate = Path.Combine(dir, relativePath);
-            if (File.Exists(candidate)) return candidate;
-            dir = Path.GetDirectoryName(dir);
-            if (dir is null) break;
-        }
-        return relativePath; // 返回原始路径，由调用方检查是否存在
-    }
 
-    private void StartConfigurationWatcher(string configPath, AcquisitionHost host, HistoryWriter writer)
+    private void StartConfigurationWatcher(string configDir, AcquisitionHost host, HistoryWriter writer)
     {
-        var directory = Path.GetDirectoryName(configPath);
-        var fileName = Path.GetFileName(configPath);
-
-        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+        if (string.IsNullOrEmpty(configDir) || !Directory.Exists(configDir))
             return;
 
-        // 监听整个目录的 *.json，防止 IDE (如 VS/VSCode) 使用“安全保存”（先写临时文件后重命名替换）导致丢失事件
-        _configWatcher = new FileSystemWatcher(directory, "*.json")
+        // 监听整个目录的 *.json 变更（新增、修改、删除、重命名）
+        _configWatcher = new FileSystemWatcher(configDir, "*.json")
         {
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.CreationTime,
             EnableRaisingEvents = true
         };
 
-        FileSystemEventHandler handler = (s, e) =>
-        {
-            if (string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase))
-            {
-                OnConfigurationChanged(configPath, host, writer);
-            }
-        };
-
-        RenamedEventHandler renamedHandler = (s, e) =>
-        {
-            if (string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase))
-            {
-                OnConfigurationChanged(configPath, host, writer);
-            }
-        };
+        FileSystemEventHandler handler = (s, e) => OnConfigurationChanged(configDir, host, writer);
+        RenamedEventHandler renamedHandler = (s, e) => OnConfigurationChanged(configDir, host, writer);
 
         _configWatcher.Changed += handler;
         _configWatcher.Created += handler;
+        _configWatcher.Deleted += handler;
         _configWatcher.Renamed += renamedHandler;
     }
 
-    private void OnConfigurationChanged(string configPath, AcquisitionHost host, HistoryWriter writer)
+    private void OnConfigurationChanged(string configDir, AcquisitionHost host, HistoryWriter writer)
     {
         _debounceCts?.Cancel();
         _debounceCts = new CancellationTokenSource();
@@ -398,23 +692,41 @@ public partial class App : PrismApplication
                 await Task.Delay(500, token); // 防抖 500ms
                 if (!token.IsCancellationRequested)
                 {
-                    Log.Information("检测到配置文件变更，正在重新加载...");
-                    await ReloadConfigurationAsync(configPath, host, writer);
+                    Log.Information("检测到配置目录变更，正在重新加载所有设备...");
+                    await ReloadConfigurationAsync(configDir, host, writer);
                 }
             }
             catch (TaskCanceledException) { /* 预期内取消 */ }
         }, token);
     }
 
-    private async Task ReloadConfigurationAsync(string configPath, AcquisitionHost host, HistoryWriter writer)
+    /// <summary>
+    /// 重新加载配置目录中所有 JSON 文件，与当前运行设备做三路对比。
+    /// </summary>
+    private async Task ReloadConfigurationAsync(string configDir, AcquisitionHost host, HistoryWriter writer)
     {
         try
         {
-            if (!File.Exists(configPath)) return;
+            if (!Directory.Exists(configDir)) return;
 
-            var newConfigs = await DeviceConfigurationLoader.LoadFromFileAsync(configPath);
+            // 合并所有 JSON 文件中的设备配置
+            var allNewConfigs = new List<DeviceConfig>();
+            var jsonFiles = Directory.GetFiles(configDir, "*.json");
+            foreach (var file in jsonFiles)
+            {
+                try
+                {
+                    var configs = await DeviceConfigurationLoader.LoadFromFileAsync(file);
+                    allNewConfigs.AddRange(configs);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "跳过无法解析的配置文件: {File}", Path.GetFileName(file));
+                }
+            }
+
             var currentDevices = host.GetDevices();
-            var newIds = newConfigs.Select(c => c.Id).ToHashSet();
+            var newIds = allNewConfigs.Select(c => c.Id).ToHashSet();
             var currentIds = currentDevices.Select(c => c.Id).ToHashSet();
 
             // 1. 停止被删除的设备
@@ -431,20 +743,26 @@ public partial class App : PrismApplication
             var toStart = newIds.Except(currentIds);
             foreach (var id in toStart)
             {
-                var newConfig = newConfigs.First(c => c.Id == id);
+                var newConfig = allNewConfigs.First(c => c.Id == id);
                 writer.RegisterTags(newConfig.Tags);
-                await host.StartDeviceAsync(newConfig);
-                Log.Information("动态添加并启动设备 {Name}", newConfig.Name);
+                try
+                {
+                    await host.StartDeviceAsync(newConfig);
+                    Log.Information("动态添加并启动设备 {Name}", newConfig.Name);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "动态启动设备 {Name} 失败", newConfig.Name);
+                }
             }
 
             // 3. 重载已存在且配置发生变化的设备
             var toCheck = currentIds.Intersect(newIds);
             foreach (var id in toCheck)
             {
-                var newConfig = newConfigs.First(c => c.Id == id);
+                var newConfig = allNewConfigs.First(c => c.Id == id);
                 var oldConfig = currentDevices.First(c => c.Id == id);
 
-                // 使用 JSON 序列化简单对比配置是否改变
                 var newJson = JsonSerializer.Serialize(newConfig);
                 var oldJson = JsonSerializer.Serialize(oldConfig);
 
@@ -456,7 +774,7 @@ public partial class App : PrismApplication
                     Log.Information("检测到设备 {Name} 配置变更，已重载", newConfig.Name);
                 }
             }
-            
+
             // 通知 UI 刷新设备列表
             var eventAggregator = Container.Resolve<IEventAggregator>();
             eventAggregator.GetEvent<IndustrialDAQ.UI.Events.ConfigurationReloadedEvent>().Publish();

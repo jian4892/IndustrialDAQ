@@ -31,15 +31,13 @@ public sealed class AlarmHistoryRepository
     /// 保存报警记录到数据库。
     /// </summary>
     /// <param name="record">报警记录。</param>
-    /// <param name="alarmType">报警类型。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    public async Task SaveAsync(AlarmRecord record, AlarmType alarmType,
-        CancellationToken cancellationToken = default)
+    public async Task SaveAsync(AlarmRecord record, CancellationToken cancellationToken = default)
     {
         try
         {
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            var entity = AlarmHistoryEntity.FromDomain(record, alarmType);
+            var entity = AlarmHistoryEntity.FromDomain(record);
             entity.CreatedAt = DateTime.UtcNow;
 
             context.AlarmHistories.Add(entity);
@@ -64,7 +62,7 @@ public sealed class AlarmHistoryRepository
     /// <param name="cancellationToken">取消令牌。</param>
     public async Task UpdateStatusAsync(string alarmId, AlarmStatus status,
         DateTime? acknowledgedAt = null, DateTime? clearedAt = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool resetClearedAt = false)
     {
         try
         {
@@ -83,10 +81,13 @@ public sealed class AlarmHistoryRepository
             _logger.LogInformation("找到报警记录: AlarmId={AlarmId}, 当前状态={CurrentStatus}, 目标状态={TargetStatus}",
                 alarmId, entity.Status, status);
 
-            entity.Status = status;
+            entity.Status = status.ToString();
             if (acknowledgedAt.HasValue)
                 entity.AcknowledgedAt = acknowledgedAt.Value;
-            if (clearedAt.HasValue)
+            
+            if (resetClearedAt)
+                entity.ClearedAt = null;
+            else if (clearedAt.HasValue)
                 entity.ClearedAt = clearedAt.Value;
 
             int affected = await context.SaveChangesAsync(cancellationToken);
@@ -105,7 +106,7 @@ public sealed class AlarmHistoryRepository
                 cmd.CommandText = "UPDATE AlarmHistories SET Status = @Status WHERE AlarmId = @AlarmId";
                 var pStatus = cmd.CreateParameter();
                 pStatus.ParameterName = "@Status";
-                pStatus.Value = (int)status;
+                pStatus.Value = status.ToString();
                 cmd.Parameters.Add(pStatus);
                 var pAlarmId = cmd.CreateParameter();
                 pAlarmId.ParameterName = "@AlarmId";
@@ -159,9 +160,9 @@ public sealed class AlarmHistoryRepository
 
             // 应用筛选条件
             if (status.HasValue)
-                query = query.Where(e => e.Status == status.Value);
+                query = query.Where(e => e.Status == status.Value.ToString());
             if (severity.HasValue)
-                query = query.Where(e => e.Severity == severity.Value);
+                query = query.Where(e => e.Severity == severity.Value.ToString());
             if (!string.IsNullOrEmpty(tagId))
                 query = query.Where(e => e.TagId == tagId);
             if (startTime.HasValue)
@@ -201,7 +202,7 @@ public sealed class AlarmHistoryRepository
         {
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
             var records = await context.AlarmHistories
-                .Where(e => e.Status == AlarmStatus.Active || e.Status == AlarmStatus.Acknowledged)
+                .Where(e => e.Status == AlarmStatus.Active.ToString() || e.Status == AlarmStatus.Acknowledged.ToString())
                 .OrderByDescending(e => e.OccurredAt)
                 .Select(e => e.ToDomain())
                 .ToListAsync(cancellationToken);
@@ -235,12 +236,12 @@ public sealed class AlarmHistoryRepository
             var statistics = new AlarmStatistics
             {
                 TotalCount = await query.CountAsync(cancellationToken),
-                ActiveCount = await query.CountAsync(e => e.Status == AlarmStatus.Active, cancellationToken),
-                AcknowledgedCount = await query.CountAsync(e => e.Status == AlarmStatus.Acknowledged, cancellationToken),
-                ClearedCount = await query.CountAsync(e => e.Status == AlarmStatus.Cleared, cancellationToken),
-                CriticalCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Critical, cancellationToken),
-                WarningCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Warning, cancellationToken),
-                InfoCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Info, cancellationToken)
+                ActiveCount = await query.CountAsync(e => e.Status == AlarmStatus.Active.ToString(), cancellationToken),
+                AcknowledgedCount = await query.CountAsync(e => e.Status == AlarmStatus.Acknowledged.ToString(), cancellationToken),
+                ClearedCount = await query.CountAsync(e => e.Status == AlarmStatus.Cleared.ToString(), cancellationToken),
+                CriticalCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Critical.ToString(), cancellationToken),
+                WarningCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Warning.ToString(), cancellationToken),
+                InfoCount = await query.CountAsync(e => e.Severity == AlarmSeverity.Info.ToString(), cancellationToken)
             };
 
             return statistics;

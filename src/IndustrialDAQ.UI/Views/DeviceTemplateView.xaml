@@ -1,0 +1,353 @@
+<!-- File: DeviceTemplateView.xaml  Module: UI (Views)  Author: IndustrialDAQ Team -->
+<UserControl x:Class="IndustrialDAQ.UI.Views.DeviceTemplateView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:vmodels="clr-namespace:IndustrialDAQ.UI.ViewModels"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             Background="{DynamicResource MainBgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════════ 左列：设备模板列表 ═══════════ -->
+        <Border Grid.Column="0" Style="{DynamicResource PanelBorderStyle}" Margin="0,0,6,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Style="{DynamicResource PanelTitleStyle}" Text="设备模板"/>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding DeviceTemplates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vmodels:DeviceTemplateItem}">
+                                <Border Background="{DynamicResource BrushBgTertiary}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1" CornerRadius="4"
+                                        Padding="10,8" Margin="0,0,0,6" Cursor="Hand">
+                                    <Border.InputBindings>
+                                        <MouseBinding MouseAction="LeftClick"
+                                                      Command="{Binding DataContext.SelectTemplateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                      CommandParameter="{Binding}"/>
+                                    </Border.InputBindings>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Column="0" Grid.RowSpan="2" Text="{Binding Icon}"
+                                                   FontSize="20" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                                        <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Name}"
+                                                   FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <StackPanel Grid.Column="1" Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock Text="{Binding DriverType}" FontSize="11"
+                                                       Foreground="{DynamicResource InfoBrush}" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding Summary}" FontSize="11"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ 右列：模板详情 ═══════════ -->
+        <Grid Grid.Column="1" Margin="6,0,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>  <!-- 模板信息卡 -->
+                <RowDefinition Height="*"/>     <!-- 数据点列表 -->
+                <RowDefinition Height="Auto"/>  <!-- 详情面板 -->
+            </Grid.RowDefinitions>
+
+            <!-- ────── 模板信息卡 ────── -->
+            <Border Grid.Row="0" Style="{DynamicResource PanelBorderStyle}" Margin="0,0,0,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding DriverIcon}" FontSize="24" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding TemplateName}" FontSize="16" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="协议: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding DriverType}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource InfoBrush}" Margin="0,0,12,0"/>
+                                <TextBlock Text="数据点: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding DataPointCount}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,12,0"/>
+                                <TextBlock Text="报警模板: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding AlarmTemplateCount}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WarningBrush}" Margin="0,0,12,0"/>
+                                <TextBlock Text="趋势模板: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding TrendTemplateCount}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource SuccessBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+ 
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="生成设备配置" Command="{Binding CreateDeviceCommand}"
+                                Padding="10,5" Margin="0,0,8,0" Cursor="Hand"
+                                Background="{DynamicResource BrushSuccessBg}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                BorderThickness="0" FontSize="12"/>
+                        <Button Content="新增设备模板" Command="{Binding AddTemplateCommand}"
+                                Padding="10,5" Margin="0,0,8,0" Cursor="Hand"
+                                Background="{DynamicResource BrushSuccessBg}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                BorderThickness="0" FontSize="12"/>
+                        <Button Content="刷新" Command="{Binding RefreshCommand}"
+                                Padding="10,5" Cursor="Hand"
+                                Background="{DynamicResource BrushSuccessBg}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                BorderThickness="0" FontSize="12"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ────── 数据点列表 ────── -->
+            <Border Grid.Row="1" Style="{DynamicResource PanelBorderStyle}" Margin="0,0,0,6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Style="{DynamicResource PanelTitleStyle}" Text="数据点模板"/>
+
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding DataPoints}"
+                              SelectedItem="{Binding SelectedDataPoint}"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                              SelectionMode="Single" CanUserResizeRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="数据点名称" Binding="{Binding Name}" Width="160"/>
+                            <DataGridTextColumn Header="数据类型" Binding="{Binding DataType}" Width="90"/>
+                            <DataGridTextColumn Header="单位" Binding="{Binding Unit}" Width="70"/>
+                            <DataGridTemplateColumn Header="报警模板" Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasAlarm}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource WarningBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding AlarmTemplateName}" FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="趋势模板" Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasTrend}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource SuccessBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding TrendTemplateName}" FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <!-- ────── 报警/趋势模板详情面板 ────── -->
+            <Border Grid.Row="2" Style="{DynamicResource PanelBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 报警模板详情 -->
+                    <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="⚠️" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="报警模板" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WarningBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1">
+                                <TextBlock Text="{Binding AlarmTemplateName}" FontSize="14" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="级别: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="60"/>
+                                    <TextBlock Text="{Binding AlarmSeverity}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="冷却: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="60"/>
+                                    <TextBlock Text="{Binding AlarmCooldown}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                </StackPanel>
+
+                                <ItemsControl ItemsSource="{Binding AlarmThresholds}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vmodels:AlarmThresholdItem}">
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="80"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                                <Border Grid.Column="1" Width="10" Height="10" CornerRadius="5"
+                                                        Background="{Binding Color}" Margin="0,0,6,0"
+                                                        VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           VerticalAlignment="Center">
+                                                    <Run Text="{Binding Value, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="未配置报警模板" FontSize="12"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontStyle="Italic" Margin="0,4,0,0"
+                                           Visibility="{Binding NoAlarmTemplate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                                  Background="Transparent"/>
+
+                    <!-- 趋势模板详情 -->
+                    <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="📈" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="趋势模板" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1">
+                                <TextBlock Text="{Binding TrendTemplateName}" FontSize="14" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="Y 轴范围: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="70"/>
+                                    <TextBlock Text="{Binding TrendYRange}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="时间窗口: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="70"/>
+                                    <TextBlock Text="{Binding TrendWindow}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="缓冲区: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="70"/>
+                                    <TextBlock Text="{Binding TrendBufferSize}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="曲线颜色: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="70"/>
+                                    <Border Width="14" Height="14" CornerRadius="3"
+                                            Background="{Binding TrendLineColor}" Margin="0,0,6,0"
+                                            VerticalAlignment="Center" BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1"/>
+                                    <TextBlock Text="{Binding TrendLineColor}" FontSize="12"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="报警线: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Width="70"/>
+                                    <TextBlock FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="关闭"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TrendShowAlarmLines}" Value="True">
+                                                        <Setter Property="Text" Value="显示"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <TextBlock Text="未配置趋势模板" FontSize="12"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontStyle="Italic" Margin="0,4,0,0"
+                                           Visibility="{Binding NoTrendTemplate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 底部状态栏 -->
+        <Border Grid.Row="2" Grid.ColumnSpan="2"
+                Background="{DynamicResource PanelBgBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="12,6"
+                VerticalAlignment="Bottom">
+            <TextBlock Text="{Binding StatusText}" FontSize="12"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+        </Border>
+    </Grid>
+</UserControl>
