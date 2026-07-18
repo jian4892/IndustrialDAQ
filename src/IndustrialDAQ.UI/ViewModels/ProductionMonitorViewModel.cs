@@ -4,32 +4,25 @@ using System.Windows;
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Storage;
-using IndustrialDAQ.Trend;
 using IndustrialDAQ.UI.Models;
-using LiveChartsCore;
-using LiveChartsCore.Defaults;
-using LiveChartsCore.SkiaSharpView;
-using LiveChartsCore.SkiaSharpView.Painting;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Mvvm;
-using SkiaSharp;
 using IndustrialDAQ.UI.Events;
 
 namespace IndustrialDAQ.UI.ViewModels;
 
 /// <summary>
-/// 灌装产线生产监控系统 ViewModel — 设备选择、趋势图、仪表盘、实时数据表。
+/// 灌装产线生产监控系统 ViewModel — 设备选择、仪表盘、实时数据表。
+/// 趋势图功能已迁移至专用的趋势监控页面（TrendView）。
 /// </summary>
 public class ProductionMonitorViewModel : BindableBase, IDestructible
 {
     private readonly RealTimeStore _realTimeStore;
     private readonly AcquisitionHost _acquisitionHost;
     private readonly IDialogService _dialogService;
-    private readonly TrendEngine _trendEngine;
     private CancellationTokenSource? _cts;
     private readonly Dictionary<string, TagDisplayItem> _itemLookup = new();
-    private readonly Dictionary<string, LineSeries<ObservablePoint>> _trendSeriesMap = new();
 
     // ─── 设备选择 ───
 
@@ -65,27 +58,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     public string AlarmText { get => _alarmText; set => SetProperty(ref _alarmText, value); }
 
     private bool _isDeviceConnected = true;
-    private IEventAggregator _eventAggregator;
+    private readonly IEventAggregator _eventAggregator;
 
     /// <summary>当前选中设备是否已连接。</summary>
     public bool IsDeviceConnected { get => _isDeviceConnected; set => SetProperty(ref _isDeviceConnected, value); }
 
-    // ─── 趋势图 ───
-
-    /// <summary>趋势图系列集合。</summary>
-    public ObservableCollection<ISeries> TrendSeries { get; } = new();
-
-    /// <summary>报警线系列（水平线）。</summary>
-    public ObservableCollection<ISeries> AlarmLineSeries { get; } = new();
-
-    /// <summary>图例字体画刷。</summary>
-    public SolidColorPaint LegendPaint { get; }
-
-    /// <summary>X 轴配置（时间轴）。</summary>
-    public Axis[] TrendXAxes { get; }
-
-    /// <summary>Y 轴配置。</summary>
-    public Axis[] TrendYAxes { get; }
+    // ─── 仪表盘 ───
 
     public ObservableCollection<GaugeItem> Gauges { get; } = new();
 
@@ -98,76 +76,22 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     public DelegateCommand NavigateBackCommand { get; }
     public DelegateCommand<TagDisplayItem> WriteTagCommand { get; }
 
-    public ProductionMonitorViewModel(RealTimeStore realTimeStore, AcquisitionHost acquisitionHost,
-        IEventAggregator eventAggregator, IDialogService dialogService, TrendEngine trendEngine)
+    public ProductionMonitorViewModel(
+        RealTimeStore realTimeStore,
+        AcquisitionHost acquisitionHost,
+        IEventAggregator eventAggregator,
+        IDialogService dialogService)
     {
         _realTimeStore = realTimeStore ?? throw new ArgumentNullException(nameof(realTimeStore));
         _acquisitionHost = acquisitionHost ?? throw new ArgumentNullException(nameof(acquisitionHost));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
-        _trendEngine = trendEngine ?? throw new ArgumentNullException(nameof(trendEngine));
         _eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
+
         // 订阅配置重载事件
         eventAggregator.GetEvent<ConfigurationReloadedEvent>().Subscribe(LoadDevices);
 
-        // ── 配置趋势图轴（暗黑主题） ──
-        var typeface = SKTypeface.FromFamilyName("Microsoft YaHei", SKFontStyleWeight.Normal, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright) ?? SKTypeface.Default;
-        var darkText = new SolidColorPaint(new SKColor(0x9C, 0xA3, 0xAF)) { SKTypeface = typeface };
-        LegendPaint = darkText;
-        var darkSeparator = new SolidColorPaint(new SKColor(0x37, 0x41, 0x51)) { StrokeThickness = 0.5f };
-        var darkZeroLine = new SolidColorPaint(new SKColor(0x2D, 0x33, 0x46)) { StrokeThickness = 1 };
-
-        TrendXAxes = new Axis[]
-        {
-            new Axis
-            {
-                Name = "时间",
-                NameTextSize = 12,
-                NamePaint = darkText,
-                LabelsPaint = darkText,
-                SeparatorsPaint = darkSeparator,
-                TextSize = 10,
-                Labeler = value =>
-                {
-                    // value 为 DateTime 的 Ticks
-                    var dt = new DateTime((long)value);
-                    return dt.ToString("HH:mm:ss");
-                }
-            }
-        };
-
-        TrendYAxes = new Axis[]
-        {
-            new Axis
-            {
-                Name = "数值",
-                NameTextSize = 12,
-                NamePaint = darkText,
-                LabelsPaint = darkText,
-                SeparatorsPaint = darkSeparator,
-                ZeroPaint = darkZeroLine,
-                TextSize = 10
-            },
-            new Axis
-            {
-                Name = "大数值",
-                Position = LiveChartsCore.Measure.AxisPosition.End,
-                ShowSeparatorLines = false,
-                NameTextSize = 12,
-                NamePaint = darkText,
-                LabelsPaint = darkText,
-                TextSize = 10,
-                IsVisible = false
-            }
-        };
-
         NavigateBackCommand = new DelegateCommand(() => { });
         WriteTagCommand = new DelegateCommand<TagDisplayItem>(OnWriteTag);
-
-        // 订阅趋势引擎刷新事件
-        _trendEngine.DataRefreshed += OnTrendDataRefreshed;
-
-        // 初始化趋势曲线（来自 TrendEngine 已注册的 Tag）
-        InitializeTrendSeries();
 
         // 延迟加载设备列表（等待 AcquisitionHost 初始化完成）
         _cts = new CancellationTokenSource();
@@ -235,7 +159,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     private void OnWriteTag(TagDisplayItem? item)
     {
         if (item == null || _selectedDevice == null) return;
-        
+
         var targetTag = _selectedDevice.Tags.FirstOrDefault(t => t.Id == item.TagId);
         if (targetTag == null) return;
 
@@ -321,13 +245,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     /// <inheritdoc />
     public void Destroy()
     {
-        _trendEngine.DataRefreshed -= OnTrendDataRefreshed;
         _cts?.Cancel();
         _cts?.Dispose();
     }
 
     /// <summary>
-    /// 后台消费实时数据，更新仪表、趋势图和数据表。
+    /// 后台消费实时数据，更新仪表和数据表。
     /// </summary>
     private async Task SubscribeToRealtimeDataAsync(CancellationToken ct)
     {
@@ -353,89 +276,12 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
     private void UpdateGaugeFromTag(TagValue value)
     {
         if (value.Value is null || value.Quality == Quality.Bad) return;
-        
+
         var gauge = Gauges.FirstOrDefault(g => g.TagId == value.TagId);
         if (gauge != null && double.TryParse(value.Value.ToString(), out double val))
         {
             gauge.Value = Math.Round(val, 2);
         }
-    }
-
-    /// <summary>
-    /// 初始化趋势曲线 — 从 TrendEngine 的已注册 Tag 创建 Series。
-    /// </summary>
-    private void InitializeTrendSeries()
-    {
-        var colors = new[] { "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6" };
-        int colorIdx = 0;
-
-        foreach (var tagId in _trendEngine.DataStore.TrackedTagIds)
-        {
-            var template = _trendEngine.DataStore.GetTemplate(tagId);
-            string color = template?.LineColor ?? colors[colorIdx % colors.Length];
-            string name = template?.Name ?? tagId.Replace("tag-", "").Replace("-", ".");
-
-            var series = new LineSeries<ObservablePoint>
-            {
-                Name = name,
-                Values = new ObservableCollection<ObservablePoint>(),
-                Stroke = new SolidColorPaint(SKColor.Parse(color)) { StrokeThickness = (float)(template?.StrokeThickness ?? 2) },
-                Fill = null,
-                GeometrySize = template?.ShowGeometry == true ? 6 : 0,
-                LineSmoothness = 0
-            };
-
-            _trendSeriesMap[tagId] = series;
-            TrendSeries.Add(series);
-            colorIdx++;
-        }
-
-        // 添加报警线
-        foreach (var line in _trendEngine.AlarmLines)
-        {
-            AlarmLineSeries.Add(new LineSeries<ObservablePoint>
-            {
-                Name = line.Label,
-                Values = new ObservableCollection<ObservablePoint>
-                {
-                    new(TrendXAxes[0].MinLimit ?? 0, line.Value),
-                    new(TrendXAxes[0].MaxLimit ?? DateTime.UtcNow.Ticks, line.Value)
-                },
-                Stroke = new SolidColorPaint(SKColor.Parse(line.Color)) { StrokeThickness = 1 },
-                Fill = null,
-                GeometrySize = 0,
-                ScalesYAt = 0
-            });
-        }
-    }
-
-    /// <summary>
-    /// 趋势引擎刷新回调 — 从 TrendCache 读取数据更新图表。
-    /// </summary>
-    private void OnTrendDataRefreshed()
-    {
-        Application.Current?.Dispatcher.Invoke(() =>
-        {
-            var windowSeconds = 300; // 默认 5 分钟窗口
-
-            foreach (var (tagId, series) in _trendSeriesMap)
-            {
-                if (series.Values is not ObservableCollection<ObservablePoint> values) continue;
-
-                var cache = _trendEngine.DataStore.GetCache(tagId);
-                if (cache is null) continue;
-
-                var template = _trendEngine.DataStore.GetTemplate(tagId);
-                windowSeconds = template?.WindowSeconds ?? windowSeconds;
-
-                var points = cache.GetWindow(windowSeconds);
-                if (points.Length == 0) continue;
-
-                values.Clear();
-                foreach (var p in points)
-                    values.Add(new ObservablePoint(p.Timestamp.Ticks, p.Value));
-            }
-        });
     }
 
     private void UpdateDataTable(TagValue value)
@@ -477,7 +323,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                 return;
             }
         }
-        
+
         // 3. 如果连接正常且没有新的报警标签触发，维持当前状态或根据连接恢复刷新
         if (HasAlarm && AlarmText.Contains("连接失败"))
         {
@@ -512,7 +358,7 @@ public class ProductionMonitorViewModel : BindableBase, IDestructible
                         {
                             IsDeviceConnected = connected;
                             UpdateAlarmStatus(null);
-                            
+
                             // 无论连上还是断开，都同步更新表格状态
                             foreach (var item in TagTable)
                             {

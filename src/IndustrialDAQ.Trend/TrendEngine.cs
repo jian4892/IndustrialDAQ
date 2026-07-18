@@ -26,6 +26,7 @@ public sealed class TrendEngine : IHostedService
 
     /// <summary>已注册的 Tag 模板。</summary>
     private readonly ConcurrentDictionary<string, TrendTemplate> _registeredTags = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastMirroredTimestamps = new();
 
     /// <summary>UI 刷新间隔（毫秒），默认 500ms。</summary>
     public int RefreshIntervalMs { get; set; } = 500;
@@ -41,6 +42,9 @@ public sealed class TrendEngine : IHostedService
 
     /// <summary>数据刷新事件 — 通知 UI 更新图表。</summary>
     public event Action? DataRefreshed;
+
+    /// <summary>趋势点位配置发生变化时通知 UI 重新生成点位列表。</summary>
+    public event Action? TagsChanged;
 
     /// <summary>报警点触发事件。</summary>
     public event Action<string, DateTime, double, AlarmSeverity>? AlarmPointTriggered;
@@ -64,10 +68,16 @@ public sealed class TrendEngine : IHostedService
     /// <param name="template">趋势模板（可选）。</param>
     public void RegisterTag(string tagId, TrendTemplate? template = null)
     {
+        // 自动发现每 500ms 执行一次，只有首次出现的点位才需要写日志并通知 UI。
+        bool alreadyRegistered = _dataStore.TrackedTagIds.Contains(tagId);
         _dataStore.RegisterTag(tagId, template);
         if (template is not null)
             _registeredTags[tagId] = template;
-        _logger.LogInformation("已注册趋势跟踪: {TagId}", tagId);
+        if (!alreadyRegistered)
+        {
+            _logger.LogInformation("已注册趋势跟踪: {TagId}", tagId);
+            TagsChanged?.Invoke();
+        }
     }
 
     /// <summary>
@@ -211,6 +221,28 @@ public sealed class TrendEngine : IHostedService
             using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(RefreshIntervalMs));
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
+                // 从实时存储自动发现数值点位，避免趋势模块依赖固定 Tag 列表。
+                foreach (var value in _store.GetAll())
+                {
+                    if (value.Quality != Quality.Bad && TryConvertToDouble(value.Value, out _))
+                        RegisterTag(value.TagId);
+                }
+
+                // 兜底镜像实时存储，避免订阅线程启动瞬间或热重载期间丢失首个数据点。
+                foreach (string tagId in _dataStore.TrackedTagIds)
+                {
+                    var value = _store.TryGetValue(tagId);
+                    if (value is null || value.Quality == Quality.Bad ||
+                        !TryConvertToDouble(value.Value, out double number))
+                        continue;
+
+                    DateTimeOffset timestamp = value.Timestamp;
+                    if (_lastMirroredTimestamps.TryGetValue(tagId, out var last) && timestamp <= last)
+                        continue;
+
+                    _lastMirroredTimestamps[tagId] = timestamp;
+                    _dataStore.Add(tagId, new TrendPoint(timestamp.UtcDateTime, number, value.Quality));
+                }
                 DataRefreshed?.Invoke();
             }
         }
@@ -251,7 +283,8 @@ public sealed class TrendEngine : IHostedService
             case byte b: result = b; return true;
             case ushort us: result = us; return true;
             case uint ui: result = ui; return true;
-            case bool b: result = b ? 1.0 : 0.0; return true;
+            case ulong ul: result = ul; return true;
+            case decimal m: result = (double)m; return true;
             default:
                 result = 0;
                 return false;

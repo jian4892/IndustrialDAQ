@@ -36,7 +36,7 @@ public sealed class AlarmDefinitionEntity
     [MaxLength(512)]
     public string? TargetResourcePath { get; set; }
 
-    /// <summary> 获取或设置旧版标签 ID。 </summary>
+    /// <summary> 获取或设置运行时解析后的标签 ID。 </summary>
     [MaxLength(128)]
     public string TagId { get; set; } = string.Empty;
 
@@ -47,6 +47,16 @@ public sealed class AlarmDefinitionEntity
     /// <summary> 获取或设置报警类型字符串。 </summary>
     [MaxLength(32)]
     public string AlarmType { get; set; } = nameof(Core.Models.AlarmType.High);
+
+    /// <summary> 获取或设置比较运算符。 </summary>
+    [MaxLength(32)]
+    public string Operator { get; set; } = nameof(AlarmOperator.GreaterThan);
+
+    /// <summary> 获取或设置报警阈值。 </summary>
+    public double Threshold { get; set; }
+
+    /// <summary> 获取或设置死区值。 </summary>
+    public double Deadband { get; set; }
 
     /// <summary> 获取或设置报警触发条件表达式。 </summary>
     [Required]
@@ -124,7 +134,6 @@ public sealed class AlarmDefinitionEntity
     /// </summary>
     public AlarmDefinition ToDomain()
     {
-        var delaySeconds = DelayMs > 0 ? (int)Math.Ceiling(DelayMs / 1000.0) : 0;
         var ackPolicy = ParseEnum(AckPolicy, AlarmAckPolicy.Required);
 
         return new AlarmDefinition
@@ -137,21 +146,21 @@ public sealed class AlarmDefinitionEntity
             TagId = TagId,
             TagName = TagName,
             AlarmType = ParseEnum(AlarmType, Core.Models.AlarmType.High),
+            Operator = ParseEnum(Operator, AlarmOperator.GreaterThan),
+            Threshold = Threshold,
+            Deadband = Deadband,
             ConditionExpression = ConditionExpression,
             Conditions = DeserializeConditions(ConditionsJson),
             ClearExpression = ClearExpression,
             SuppressionExpression = SuppressionExpression,
             ExpressionJoin = ParseEnum(ExpressionJoin, AlarmExpressionJoin.And),
             DelayMs = DelayMs,
-            DelaySeconds = delaySeconds,
             Hysteresis = Hysteresis,
             Severity = ParseEnum(Severity, AlarmSeverity.Warning),
             Title = Title,
             MessageTemplate = MessageTemplate,
             Source = Source,
-            Enabled = IsEnabled,
             IsEnabled = IsEnabled,
-            RequireAck = ackPolicy != AlarmAckPolicy.NotRequired,
             AckPolicy = ackPolicy,
             ClearPolicy = ParseEnum(ClearPolicy, AlarmClearPolicy.AutoClearWhenConditionFalse),
             CooldownSeconds = CooldownSeconds,
@@ -193,20 +202,21 @@ public sealed class AlarmDefinitionEntity
         entity.TagId = definition.TagId;
         entity.TagName = definition.TagName;
         entity.AlarmType = definition.AlarmType.ToString();
-        entity.ConditionExpression = definition.ConditionExpression;
+        entity.Operator = definition.Operator.ToString();
+        entity.Threshold = definition.Threshold;
+        entity.Deadband = definition.Deadband;
+        entity.ConditionExpression = definition.GetEffectiveConditionExpression();
         entity.ConditionsJson = JsonSerializer.Serialize(definition.Conditions, JsonOptions);
         entity.ClearExpression = definition.ClearExpression;
         entity.SuppressionExpression = definition.SuppressionExpression;
         entity.ExpressionJoin = definition.ExpressionJoin.ToString();
-        entity.DelayMs = definition.DelayMs > 0
-            ? definition.DelayMs
-            : (int)TimeSpan.FromSeconds(definition.DelaySeconds).TotalMilliseconds;
+        entity.DelayMs = definition.DelayMs;
         entity.Hysteresis = definition.Hysteresis;
         entity.Severity = definition.Severity.ToString();
         entity.Title = definition.Title;
         entity.MessageTemplate = definition.MessageTemplate;
         entity.Source = definition.Source;
-        entity.IsEnabled = definition.IsRuntimeEnabled;
+        entity.IsEnabled = definition.IsEnabled;
         entity.AckPolicy = definition.AckPolicy.ToString();
         entity.ClearPolicy = definition.ClearPolicy.ToString();
         entity.CooldownSeconds = definition.CooldownSeconds;

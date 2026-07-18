@@ -1,4 +1,4 @@
-// File: ModbusTcpDriver.cs
+﻿// File: ModbusTcpDriver.cs
 using System.Net.Sockets;
 using IndustrialDAQ.Core.Interfaces;
 using IndustrialDAQ.Core.Models;

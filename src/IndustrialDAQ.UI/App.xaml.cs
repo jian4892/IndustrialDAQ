@@ -98,7 +98,7 @@ public partial class App : PrismApplication
         containerRegistry.RegisterForNavigation<TrendView>();
         containerRegistry.RegisterForNavigation<DeviceTemplateView>();
         containerRegistry.RegisterForNavigation<SystemSettingsView>();
-        containerRegistry.RegisterForNavigation<ResourceRuleConfigView, ResourceRuleConfigViewModel>();
+        containerRegistry.RegisterForNavigation<AlarmRuleConfigView, AlarmRuleConfigViewModel>();
 
         containerRegistry.RegisterDialogWindow<FramelessDialogWindow>();
         containerRegistry.RegisterDialog<WriteTagDialog, WriteTagDialogViewModel>();
@@ -287,6 +287,9 @@ public partial class App : PrismApplication
                 TagId TEXT NOT NULL DEFAULT '',
                 TagName TEXT NOT NULL DEFAULT '',
                 AlarmType TEXT NOT NULL DEFAULT 'High',
+                Operator TEXT NOT NULL DEFAULT 'GreaterThan',
+                Threshold REAL NOT NULL DEFAULT 0,
+                Deadband REAL NOT NULL DEFAULT 0,
                 ConditionExpression TEXT NOT NULL,
                 ConditionsJson TEXT NOT NULL DEFAULT '[]',
                 ClearExpression TEXT,

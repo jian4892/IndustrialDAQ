@@ -2,9 +2,9 @@ using System.Windows.Controls;
 
 namespace IndustrialDAQ.UI.Views;
 
-public partial class ResourceRuleConfigView : UserControl
+public partial class AlarmRuleConfigView : UserControl
 {
-    public ResourceRuleConfigView()
+    public AlarmRuleConfigView()
     {
         InitializeComponent();
     }

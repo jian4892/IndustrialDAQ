@@ -4,7 +4,11 @@
              xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
              Background="{DynamicResource MainBgBrush}">
 
-    <Grid Margin="16">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </UserControl.Resources>
+
+    <Grid Margin="20" Background="{DynamicResource MainBgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -14,53 +18,85 @@
         <!-- ═══ 顶部工具栏 ═══ -->
         <Border Grid.Row="0" Background="{DynamicResource CardBgBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                CornerRadius="8" Padding="16,10" Margin="0,0,0,14">
             <DockPanel>
                 <!-- 标题 -->
                 <TextBlock Text="趋势监控" FontSize="16" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimaryBrush}"
-                           VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,20,0"/>
+                           VerticalAlignment="Center" DockPanel.Dock="Left" Margin="0,0,28,0"/>
+
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left"
+                            Visibility="{Binding IsHistoryMode, Converter={StaticResource BoolToVisibility}}"
+                            VerticalAlignment="Center" Margin="0,0,18,0">
+                    <TextBlock Text="开始" Foreground="{DynamicResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <DatePicker SelectedDate="{Binding HistoryStart, Mode=TwoWay}" Width="118" Margin="0,0,6,0"/>
+                    <TextBlock Text="结束" Foreground="{DynamicResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <DatePicker SelectedDate="{Binding HistoryEnd, Mode=TwoWay}" Width="118" Margin="0,0,8,0"/>
+                    <Button Content="查询" Command="{Binding QueryHistoryCommand}"
+                            Padding="10,5" Margin="0,0,5,0"
+                            Background="{DynamicResource AccentBrush}" Foreground="White"
+                            BorderThickness="0"/>
+                    <Button Content="近15分钟" Command="{Binding SetLast15MinCommand}"
+                            Padding="8,5" Margin="0,0,4,0"/>
+                    <Button Content="近1小时" Command="{Binding SetLastHourCommand}"
+                            Padding="8,5"/>
+                </StackPanel>
 
                 <!-- 控制按钮 -->
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <!-- 暂停/恢复 -->
                     <Button Command="{Binding TogglePauseCommand}" Margin="0,0,8,0"
-                            Padding="12,6" Background="#374151" Foreground="{DynamicResource TextPrimaryBrush}"
+                            Padding="14,7" Background="{DynamicResource AccentBrush}" Foreground="White"
                             BorderThickness="0" Cursor="Hand">
                         <TextBlock Text="{Binding PauseButtonText}" VerticalAlignment="Center"/>
                     </Button>
 
                     <!-- 实时/历史切换 -->
                     <Button Command="{Binding SwitchModeCommand}" Margin="0,0,8,0"
-                            Padding="12,6" Background="#374151" Foreground="{DynamicResource TextPrimaryBrush}"
+                            Padding="14,7" Background="{DynamicResource InfoBrush}" Foreground="White"
                             BorderThickness="0" Cursor="Hand">
                         <TextBlock Text="{Binding ModeButtonText}" VerticalAlignment="Center"/>
                     </Button>
                 </StackPanel>
 
                 <!-- Tag 选择列表 -->
-                <ItemsControl ItemsSource="{Binding AvailableTags}" DockPanel.Dock="Right"
-                              Margin="0,0,20,0" VerticalAlignment="Center">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding TagName}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                      Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,12,0"
-                                      Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                      CommandParameter="{Binding}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <Expander DockPanel.Dock="Left" Margin="0,0,18,0"
+                          VerticalAlignment="Center" Header="{Binding SelectedTagSummary}"
+                          Foreground="{DynamicResource TextPrimaryBrush}">
+                    <Border Background="{DynamicResource CardBgBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="10" Margin="0,6,0,0">
+                        <ScrollViewer Width="420" MaxHeight="180"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding AvailableTags}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding TagName}"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                                  Margin="0,4,18,4" MinWidth="150"
+                                                  Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Expander>
             </DockPanel>
         </Border>
 
         <!-- ═══ 趋势图表 ═══ -->
         <Border Grid.Row="1" Background="{DynamicResource CardBgBrush}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10">
             <lvc:CartesianChart Series="{Binding Series}"
                                 XAxes="{Binding XAxes}"
                                 YAxes="{Binding YAxes}"
@@ -69,13 +105,13 @@
                                 TooltipTextPaint="{Binding LegendPaint}"
                                 AnimationsSpeed="00:00:00.15"
                                 ZoomMode="X"
-                                Margin="8"/>
+                                Margin="4"/>
         </Border>
 
         <!-- ═══ 底部状态栏 ═══ -->
         <Border Grid.Row="2" Background="{DynamicResource CardBgBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                CornerRadius="4" Padding="12,6" Margin="0,12,0,0">
+                CornerRadius="6" Padding="14,8" Margin="0,14,0,0">
             <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextMutedBrush}"
                        FontSize="12" VerticalAlignment="Center"/>
         </Border>

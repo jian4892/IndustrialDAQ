@@ -252,7 +252,7 @@ public sealed class AlarmCenter : IAlarmCenter
         }
 
         await _historyRepository
-            .SaveAsync(record, transition.Definition.AlarmType, cancellationToken)
+            .SaveAsync(record, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -281,6 +281,7 @@ public sealed class AlarmCenter : IAlarmCenter
         {
             Id = transition.OccurrenceId,
             RuleId = transition.RuleId,
+            AlarmCode = definition.AlarmCode,
             Severity = definition.Severity,
             Source = string.IsNullOrWhiteSpace(definition.Source)
                 ? definition.TargetResourcePath?.Value ?? definition.ResourcePath?.Value ?? definition.TagName
@@ -289,11 +290,16 @@ public sealed class AlarmCenter : IAlarmCenter
             Message = BuildMessage(definition, transition, value),
             TagId = definition.TagId,
             TagName = string.IsNullOrWhiteSpace(definition.TagName) ? transition.RuleId : definition.TagName,
+            TargetResourcePath = definition.TargetResourcePath?.Value ?? string.Empty,
             TriggerValue = value,
+            AlarmType = definition.AlarmType,
             OccurredAt = transition.OccurredAt.UtcDateTime,
             Status = status,
             AcknowledgedAt = transition.ToState == AlarmState.Acknowledged ? transition.OccurredAt.UtcDateTime : null,
-            ClearedAt = transition.ToState is AlarmState.Cleared or AlarmState.Normal ? transition.OccurredAt.UtcDateTime : null
+            ClearedAt = transition.ToState is AlarmState.Cleared or AlarmState.Normal ? transition.OccurredAt.UtcDateTime : null,
+            OccurrenceId = transition.OccurrenceId,
+            FromState = transition.FromState.ToString(),
+            ToState = transition.ToState.ToString()
         };
     }
 

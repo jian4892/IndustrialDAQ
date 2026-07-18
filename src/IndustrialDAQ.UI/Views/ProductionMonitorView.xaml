@@ -170,81 +170,54 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- ────── 右列：趋势图 + 数据表 ────── -->
-            <Grid Grid.Column="1" Margin="6,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="6"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- 实时趋势图 -->
-                <Border Grid.Row="0" Style="{DynamicResource PanelBorderStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Style="{DynamicResource PanelTitleStyle}"
-                                   Text="实时趋势图 (X=时间)"/>
-                        <lvc:CartesianChart Grid.Row="1"
-                                            Series="{Binding TrendSeries}"
-                                            XAxes="{Binding TrendXAxes}"
-                                            YAxes="{Binding TrendYAxes}"
-                                            TooltipPosition="Top"
-                                            TooltipTextPaint="{Binding LegendPaint}"
-                                            LegendPosition="Bottom"
-                                            LegendTextSize="12"
-                                            LegendTextPaint="{Binding LegendPaint}"
-                                            AnimationsSpeed="00:00:00.15"
-                                            ZoomMode="X"
-                                            Margin="0,4"/>
-                    </Grid>
-                </Border>
-
-                <!-- 实时数据表 -->
-                <Border Grid.Row="2" Style="{DynamicResource PanelBorderStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Style="{DynamicResource PanelTitleStyle}"
-                                   Text="实时数据表"/>
-                        <DataGrid Grid.Row="1"
-                                  ItemsSource="{Binding TagTable}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  SelectionMode="Single"
-                                  RowStyle="{DynamicResource DataGridRowQualityStyle}">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="测点名称" Binding="{Binding TagName}"
-                                                    Width="180"/>
-                                <DataGridTextColumn Header="当前值" Binding="{Binding Value}"
-                                                    Width="120"/>
-                                <DataGridTextColumn Header="质量" Binding="{Binding Quality}"
-                                                    Width="80"/>
-                                <DataGridTextColumn Header="时间戳" Binding="{Binding Timestamp}"
-                                                    Width="120"/>
-                                <!-- 数据写入列 -->
-                                <DataGridTemplateColumn Header="操作" Width="100" CanUserResize="False">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" Visibility="{Binding CanWrite, Converter={StaticResource BooleanToVisibilityConverter}}" HorizontalAlignment="Center">
-                                                <Button Content="写入" Command="{Binding DataContext.WriteTagCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" 
-                                                        CommandParameter="{Binding}" VerticalAlignment="Center"
-                                                        Style="{DynamicResource DataGridActionButtonStyle}"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
-                </Border>
-            </Grid>
+            <!-- ────── 右列：实时数据表（趋势图已移至专用趋势监控页）────── -->
+            <Border Grid.Column="1" Margin="6,0" Style="{DynamicResource PanelBorderStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Style="{DynamicResource PanelTitleStyle}"
+                               Text="实时数据表"/>
+                    <DataGrid Grid.Row="1"
+                              ItemsSource="{Binding TagTable}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              SelectionMode="Single"
+                              RowStyle="{DynamicResource DataGridRowQualityStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="测点名称" Binding="{Binding TagName}"
+                                                Width="180"/>
+                            <DataGridTextColumn Header="描述" Binding="{Binding Description}"
+                                                Width="180"/>
+                            <DataGridTextColumn Header="当前值" Binding="{Binding Value}"
+                                                Width="120"/>
+                            <DataGridTextColumn Header="质量" Binding="{Binding Quality}"
+                                                Width="80"/>
+                            <DataGridTextColumn Header="时间戳" Binding="{Binding Timestamp}"
+                                                Width="120"/>
+                            <!-- 数据写入列 -->
+                            <DataGridTemplateColumn Header="操作" Width="100" CanUserResize="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal"
+                                                    Visibility="{Binding CanWrite, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    HorizontalAlignment="Center">
+                                            <Button Content="写入"
+                                                    Command="{Binding DataContext.WriteTagCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}"
+                                                    VerticalAlignment="Center"
+                                                    Style="{DynamicResource DataGridActionButtonStyle}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

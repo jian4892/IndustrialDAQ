@@ -165,7 +165,13 @@ public sealed class RuleEngineService : IHostedService, IRuleEngineService
                 // 使用编译后的工作流对标签值进行评估
                 var result = await workflow.EvaluateAsync(value, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
-                
+
+                // 规则运行时日志：记录每次评估结果
+                _logger.LogDebug(
+                    "规则评估: RuleId={RuleId}, TagId={TagId}, Value={Value}, 触发={IsTriggered}, 清除={IsCleared}, 抑制={IsSuppressed}",
+                    workflow.Definition.RuleId, value.TagId, value.Value,
+                    result.IsTriggered, result.IsCleared, result.IsSuppressed);
+
                 // 将评估结果包装成信号发布
                 var signal = AlarmRuleSignal.FromEvaluation(workflow, result, value);
                 await _signalBus.PublishAsync(signal, cancellationToken).ConfigureAwait(false);

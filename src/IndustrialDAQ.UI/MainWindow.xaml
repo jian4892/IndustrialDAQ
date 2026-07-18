@@ -235,12 +235,12 @@
                             </StackPanel>
                         </RadioButton>
 
-                        <!-- 规则配置 -->
+                        <!-- 报警规则配置（向导 + 高级合并） -->
                         <RadioButton Style="{StaticResource NavRadioButtonStyle}"
-                                     Command="{Binding NavigateCommand}" CommandParameter="ResourceRuleConfig">
+                                     Command="{Binding NavigateCommand}" CommandParameter="AlarmRuleConfig">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="📝" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <TextBlock Text="规则配置" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock Text="🔧" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Text="报警规则配置" FontSize="14" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                     </StackPanel>

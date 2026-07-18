@@ -113,7 +113,7 @@ public sealed partial class AlarmRuleBuilder : IAlarmRuleBuilder
 
         if (fragments.Length == 0)
         {
-            return definition.ConditionExpression.Trim();
+            return definition.GetEffectiveConditionExpression().Trim();
         }
 
         var op = definition.ExpressionJoin == AlarmExpressionJoin.Or ? " || " : " && ";

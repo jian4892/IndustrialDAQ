@@ -1,12 +1,18 @@
 // File: Program.cs  Module: Console Demo  Author: IndustrialDAQ Team
+// 已迁移到新报警链路：RuleEngineService -> AlarmStateMachineService -> AlarmCenter
 using IndustrialDAQ.Acquisition;
 using IndustrialDAQ.Acquisition.Mocks;
 using IndustrialDAQ.Alarm;
+using IndustrialDAQ.Alarm.Center;
+using IndustrialDAQ.Alarm.RuleBuilder;
+using IndustrialDAQ.Alarm.RuleEngine;
+using IndustrialDAQ.Alarm.StateMachine;
 using IndustrialDAQ.Core;
 using IndustrialDAQ.Core.Configuration;
 using IndustrialDAQ.Core.Interfaces;
 using IndustrialDAQ.Core.Models;
 using IndustrialDAQ.Infrastructure;
+using IndustrialDAQ.Infrastructure.Alarms;
 using IndustrialDAQ.Processing;
 using IndustrialDAQ.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +85,7 @@ try
     }
 
     // ──────────── 3. DI 容器 & 托管服务 ────────────
+    // 使用新报警链路：RuleEngineService -> AlarmStateMachineService -> AlarmCenter
     IHost host = Host.CreateDefaultBuilder(args)
         .UseSerilog()
         .ConfigureServices((ctx, services) =>
@@ -86,10 +93,20 @@ try
             services.AddSingleton<AcquisitionChannel>();
             services.AddSingleton<IDriverFactory, DriverFactory>();
             services.AddSingleton<RealTimeStore>();
-            services.AddSingleton<AlarmEventBus>();
             services.AddSingleton<DataProcessor>();
-            services.AddSingleton<AlarmEngine>();
             services.AddSingleton<AlarmHistoryRepository>();
+
+            // 新报警链路完整管道
+            services.AddSingleton<IAlarmDefinitionRepository, AlarmDefinitionRepository>();
+            services.AddSingleton<IAlarmDefinitionService, AlarmDefinitionService>();
+            services.AddSingleton<IAlarmRuleBuilder, AlarmRuleBuilder>();
+            services.AddSingleton<IAlarmRuleSignalBus, AlarmRuleSignalBus>();
+            services.AddSingleton<IRuleEngineService, RuleEngineService>();
+            services.AddSingleton<IAlarmStateTransitionBus, AlarmStateTransitionBus>();
+            services.AddSingleton<IAlarmStateMachineService, AlarmStateMachineService>();
+            services.AddSingleton<IAlarmCenterEventBus, AlarmCenterEventBus>();
+            services.AddSingleton<IAlarmCenter, AlarmCenter>();
+            services.AddSingleton<AlarmManager>();
 
             services.AddDbContextFactory<DaqDbContext>(options =>
                 options.UseSqlite("Data Source=industrialdaq.db"));
@@ -101,7 +118,6 @@ try
             services.AddHostedService(sp => sp.GetRequiredService<HistoryWriter>());
 
             services.AddHostedService(sp => sp.GetRequiredService<DataProcessor>());
-            services.AddHostedService(sp => sp.GetRequiredService<AlarmEngine>());
         })
         .Build();
 
@@ -147,16 +163,19 @@ try
     foreach (string dt in driverFactory.RegisteredDriverTypes)
         Log.Information("  - {DriverType}", dt);
 
-    // ──────────── 6. 启动宿主 ────────────
-    await host.StartAsync();
+    // ──────────── 6. 启动新报警链路 ────────────
+    var alarmManager = host.Services.GetRequiredService<AlarmManager>();
+    var ruleEngineService = host.Services.GetRequiredService<IRuleEngineService>();
+    var alarmStateMachineService = host.Services.GetRequiredService<IAlarmStateMachineService>();
+    var alarmCenter = host.Services.GetRequiredService<IAlarmCenter>();
 
-    AcquisitionHost acquisitionHost = host.Services.GetRequiredService<AcquisitionHost>();
-    HistoryWriter historyWriter = host.Services.GetRequiredService<HistoryWriter>();
-    RealTimeStore realTimeStore = host.Services.GetRequiredService<RealTimeStore>();
-    DataProcessor dataProcessor = host.Services.GetRequiredService<DataProcessor>();
-    AlarmEngine alarmEngine = host.Services.GetRequiredService<AlarmEngine>();
+    _ = alarmManager.StartAsync(CancellationToken.None);
+    _ = ruleEngineService.StartAsync(CancellationToken.None);
+    _ = alarmStateMachineService.StartAsync(CancellationToken.None);
+    _ = alarmCenter.StartAsync(CancellationToken.None);
 
     // ──────────── 7. 配置计算规则 ────────────
+    DataProcessor dataProcessor = host.Services.GetRequiredService<DataProcessor>();
     dataProcessor.RegisterRules(new[]
     {
         new CalculationRule
@@ -170,8 +189,8 @@ try
         }
     });
 
-    // ──────────── 8. 配置报警规则 ────────────
-    alarmEngine.RegisterRules(new[]
+    // ──────────── 8. 配置报警规则（通过新链路 AlarmManager 注册） ────────────
+    alarmManager.RegisterRules(new[]
     {
         // 灌装液位高限报警
         new AlarmDefinition
@@ -223,7 +242,14 @@ try
         }
     });
 
-    // ──────────── 9. 启动设备采集 ────────────
+    // ──────────── 9. 启动宿主 ────────────
+    await host.StartAsync();
+
+    AcquisitionHost acquisitionHost = host.Services.GetRequiredService<AcquisitionHost>();
+    HistoryWriter historyWriter = host.Services.GetRequiredService<HistoryWriter>();
+    RealTimeStore realTimeStore = host.Services.GetRequiredService<RealTimeStore>();
+
+    // ──────────── 10. 启动设备采集 ────────────
     foreach (DeviceConfig config in deviceConfigs)
     {
         // 注册测点到 HistoryWriter
@@ -244,7 +270,7 @@ try
         }
     }
 
-    // ──────────── 10. 实时数据观察者 ────────────
+    // ──────────── 11. 实时数据观察者 ────────────
     var observerCts = new CancellationTokenSource();
     _ = Task.Run(async () =>
     {
@@ -263,38 +289,25 @@ try
         catch (OperationCanceledException) { }
     });
 
-    // ──────────── 11. 报警观察者 ────────────
+    // ──────────── 12. 报警观察者（通过 AlarmManager 事件） ────────────
     var alarmObserverCts = new CancellationTokenSource();
-    _ = Task.Run(async () =>
+    alarmManager.AlarmTriggered += (s, e) =>
     {
-        var alarmEventBus = host.Services.GetRequiredService<AlarmEventBus>();
-        try
-        {
-            await foreach (AlarmEvent alarmEvent in alarmEventBus.Subscribe(alarmObserverCts.Token))
-            {
-                string sev = alarmEvent.Rule.Severity switch
-                {
-                    AlarmSeverity.Critical => "严重",
-                    AlarmSeverity.Warning => "警告",
-                    _ => "信息"
-                };
-                string state = alarmEvent.State switch
-                {
-                    AlarmState.Active => "触发",
-                    AlarmState.Acknowledged => "已确认",
-                    AlarmState.Normal => "已恢复",
-                    _ => "未知"
-                };
-                Console.ForegroundColor = alarmEvent.Rule.Severity == AlarmSeverity.Critical
-                    ? ConsoleColor.Red : ConsoleColor.Yellow;
-                Console.WriteLine($"[报警] [{sev}] [{state}] {alarmEvent.Rule.Title} — 值={alarmEvent.TriggerValue:F2}");
-                Console.ResetColor();
-            }
-        }
-        catch (OperationCanceledException) { }
-    });
+        Console.ForegroundColor = e.Record.Severity == AlarmSeverity.Critical
+            ? ConsoleColor.Red : ConsoleColor.Yellow;
+        Console.WriteLine($"[报警] [触发] {e.Record.Title} — 值={e.Record.TriggerValue:F2}");
+        Console.ResetColor();
+    };
+    alarmManager.AlarmCleared += (s, e) =>
+    {
+        Console.WriteLine($"[报警] [恢复] {e.Record.Title}");
+    };
+    alarmManager.AlarmAcknowledged += (s, e) =>
+    {
+        Console.WriteLine($"[报警] [已确认] {e.Record.Title}");
+    };
 
-    // ──────────── 12. 交互式写入菜单 ────────────
+    // ──────────── 13. 交互式写入菜单 ────────────
     Log.Information("═══════════════════════════════════════════");
     Log.Information("  灌装产线数据采集系统");
     Log.Information("  输入命令控制产线 (输入 'help' 查看帮助)");
@@ -331,6 +344,7 @@ try
                         Console.WriteLine("  write <TagName> <Value>  — 写入标签值");
                         Console.WriteLine("  read                     — 立即读取所有标签");
                         Console.WriteLine("  status                   — 显示当前所有测点值");
+                        Console.WriteLine("  ack                      — 确认所有活跃报警");
                         Console.WriteLine("  exit / quit              — 退出程序");
                         Console.WriteLine();
                         Console.WriteLine("═══ 示例 ═══");
@@ -391,6 +405,11 @@ try
                         }
                         break;
 
+                    case "ack":
+                        alarmManager.AcknowledgeAllAlarms();
+                        Console.WriteLine("已确认所有活跃报警");
+                        break;
+
                     case "read":
                     case "status":
                         Console.WriteLine("═══ 当前测点值 ═══");
@@ -419,14 +438,14 @@ try
         }
     });
 
-    // ──────────── 13. 等待退出信号 ────────────
+    // ──────────── 14. 等待退出信号 ────────────
     try
     {
         await Task.Delay(Timeout.Infinite, writeCts.Token);
     }
     catch (OperationCanceledException) { }
 
-    // ──────────── 14. 统计与优雅停止 ────────────
+    // ──────────── 15. 统计与优雅停止 ────────────
     Log.Information("═══════════════════════════════════════════");
     Log.Information("  运行统计");
     Log.Information("  实时库测点数: {Count}", realTimeStore.Count);

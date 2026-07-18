@@ -64,12 +64,16 @@ public sealed class DaqDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.AlarmId);
             entity.HasIndex(e => e.RuleId);
+            entity.HasIndex(e => e.AlarmCode);
             entity.HasIndex(e => e.TagId);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.Severity);
             entity.HasIndex(e => e.OccurredAt);
+            entity.HasIndex(e => e.OccurrenceId);
             // 复合索引：按状态 + 时间查询是最高频场景
             entity.HasIndex(e => new { e.Status, e.OccurredAt });
+            // 复合索引：按规则 + 发生标识查询
+            entity.HasIndex(e => new { e.RuleId, e.OccurrenceId });
         });
 
         modelBuilder.Entity<DeviceTemplateEntity>(entity =>

@@ -102,7 +102,7 @@ public sealed class AlarmTemplate
                 Title = title,
                 MessageTemplate = messageTemplate,
                 Source = source,
-                Enabled = true,
+                IsEnabled = true,
                 CooldownSeconds = CooldownSeconds
             });
         }
