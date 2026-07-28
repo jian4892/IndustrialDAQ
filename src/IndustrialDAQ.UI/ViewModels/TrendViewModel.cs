@@ -199,9 +199,11 @@ public class TrendViewModel : BindableBase, IDestructible
             if (IsRealTimeMode)
             {
                 StatusText = "实时模式";
-                // 切回实时模式时清除历史模式留下的坐标范围和缩放状态。
+                // 切回实时模式时清除历史模式留下的坐标范围和缩放状态
                 XAxes[0].MinLimit = null;
                 XAxes[0].MaxLimit = null;
+                YAxes[0].MinLimit = null;
+                YAxes[0].MaxLimit = null;
                 // 切回实时模式立刻刷新一次
                 RefreshRealTimeData();
             }
@@ -443,13 +445,20 @@ public class TrendViewModel : BindableBase, IDestructible
         TotalPoints = totalPts;
         UpdateStats(globalMin, globalMax, globalSum, globalCount);
 
-        if (globalCount > 0)
+        if (globalCount > 0 && globalMax > globalMin)
         {
             double padding = Math.Max((globalMax - globalMin) * 0.08, 0.5);
-            YAxes[0].MinLimit = globalMin - padding;
-            YAxes[0].MaxLimit = globalMax + padding;
-            XAxes[0].MinLimit = firstTimestamp;
-            XAxes[0].MaxLimit = lastTimestamp;
+            var yMin = globalMin - padding;
+            var yMax = globalMax + padding;
+            // 仅在范围有效时设置 Y 轴，避免 LiveChartsCore 因 MinLimit >= MaxLimit 隐藏坐标轴
+            if (yMin < yMax)
+            {
+                YAxes[0].MinLimit = yMin;
+                YAxes[0].MaxLimit = yMax;
+            }
+            // X 轴（时间）交给 LiveCharts 自管理，不写死限制，避免缩放/交互时坐标轴消失
+            XAxes[0].MinLimit = null;
+            XAxes[0].MaxLimit = null;
         }
 
         StatusText = IsPaused ? "已暂停" :

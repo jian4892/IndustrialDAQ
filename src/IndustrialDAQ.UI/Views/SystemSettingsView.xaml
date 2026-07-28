@@ -3,8 +3,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:prism="http://prismlibrary.com/"
+             xmlns:views="clr-namespace:IndustrialDAQ.UI.Views"
              prism:ViewModelLocator.AutoWireViewModel="True"
              Background="{DynamicResource MainBgBrush}">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <views:CategoryNameToVisibilityConverter x:Key="CategoryToVis"/>
+    </UserControl.Resources>
 
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
@@ -59,8 +65,9 @@
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="0,4">
 
-                        <!-- 界面设置 -->
-                        <Border Style="{StaticResource CardBorderStyle}">
+                        <!-- ═══ 界面设置（仅"设备管理"分类显示）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=设备管理}">
                             <StackPanel>
                                 <TextBlock Text="🎨 界面外观" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
@@ -80,8 +87,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 数据库设置 -->
-                        <Border Style="{StaticResource CardBorderStyle}">
+                        <!-- ═══ 数据库设置（仅"存储管理"分类显示）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=存储管理}">
                             <StackPanel>
                                 <TextBlock Text="📁 数据库配置" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
@@ -116,8 +124,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 采集参数 -->
-                        <Border Style="{StaticResource CardBorderStyle}">
+                        <!-- ═══ 采集参数（仅"系统参数"分类显示）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=系统参数}">
                             <StackPanel>
                                 <TextBlock Text="⚙ 采集参数" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
@@ -161,13 +170,32 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 更多设置区域占位 -->
-                        <Border Style="{StaticResource CardBorderStyle}">
+                        <!-- ═══ 通信参数（仅"通信设置"分类显示）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=通信设置}">
                             <StackPanel>
                                 <TextBlock Text="📡 通信参数" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,0,0,8"/>
                                 <TextBlock Text="（Modbus / OPC UA / MQTT 参数配置将在后续版本中提供）"
+                                           FontSize="12" Foreground="{StaticResource TextDimBrush}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ═══ 报警规则（仅"报警规则"分类显示 — 嵌入 AlarmRuleConfigView）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=报警规则}">
+                            <views:AlarmRuleConfigView/>
+                        </Border>
+
+                        <!-- ═══ 日志设置（仅"日志设置"分类显示）═══ -->
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Visibility="{Binding SelectedCategory.Name, Converter={StaticResource CategoryToVis}, ConverterParameter=日志设置}">
+                            <StackPanel>
+                                <TextBlock Text="📋 日志设置" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"/>
+                                <TextBlock Text="（Serilog 日志级别和输出目标配置将在后续版本中提供）"
                                            FontSize="12" Foreground="{StaticResource TextDimBrush}"/>
                             </StackPanel>
                         </Border>
