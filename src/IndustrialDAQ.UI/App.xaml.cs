@@ -30,6 +30,7 @@ using Prism.Navigation.Regions;
 using Serilog;
 using Serilog.Events;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Windows;
 
@@ -68,6 +69,8 @@ public partial class App : PrismApplication
         // devices, tags, alarms, rules and inherited permissions.
         containerRegistry.RegisterSingleton<IResourceTreeRepository, ResourceTreeRepository>();
         containerRegistry.RegisterSingleton<IResourceTreeService, ResourceTreeService>();
+        // 将 AcquisitionHost 实时设备树镜像为资源树（单一事实源，解决报警页下拉与现场设备不一致）
+        containerRegistry.RegisterSingleton<ResourceTreeSynchronizer>();
         
         containerRegistry.RegisterSingleton<IUserRepository, UserRepository>();
         containerRegistry.RegisterSingleton<IAuthManager, AuthManager>();
@@ -200,16 +203,12 @@ public partial class App : PrismApplication
         _ = alarmStateMachineService.StartAsync(CancellationToken.None);
         _ = alarmCenter.StartAsync(CancellationToken.None);
 
-        // ── 注册测试报警规则 ──
-        RegisterTestAlarmRules(alarmManager);
-
         // ── 启动趋势引擎 ──
         var trendEngine = Container.Resolve<TrendEngine>();
         _ = trendEngine.StartAsync(CancellationToken.None);
-        RegisterTrendTags(trendEngine, Container.Resolve<IAlarmDefinitionService>());
 
-        // ── 加载 JSON 配置并启动设备 ──
-        _ = LoadAndStartDevicesAsync(acquisitionHost, historyWriter);
+        // ── 加载 JSON 配置并启动设备（内部完成设备启动后会注册报警规则+趋势Tag） ──
+        _ = LoadAndStartDevicesAsync(acquisitionHost, historyWriter, alarmManager, trendEngine);
 
         // ── 导航到仪表板 ──
         var regionManager = Container.Resolve<IRegionManager>();
@@ -392,129 +391,98 @@ public partial class App : PrismApplication
     /// 注册测试报警规则到新报警定义仓储，用于开发调试。
     /// TagId 匹配 production-line.json 中的实际配置。
     /// </summary>
-    private void RegisterTestAlarmRules(AlarmManager alarmManager)
+    private void RegisterDynamicAlarmRules(AlarmManager alarmManager, AcquisitionHost host)
     {
-        var rules = new[]
-        {
-            // ═══ S7-1500 PLC (OpcUA) 报警规则 ═══
+        var allRules = new List<AlarmDefinition>();
+        var devices = host.GetDevices();
 
-            // 高限报警 — 灌装液位达到或超过 700 mL
-            new AlarmDefinition
-            {
-                RuleId = "alm-fill-high",
-                AlarmCode = "FILL_LEVEL_HIGH",
-                TagId = "tag-filling-actuallevel",
-                TagName = "Filling.ActualLevel",
-                AlarmType = AlarmType.High,
-                ConditionExpression = "Value >= 700",
-                Hysteresis = 30.0,  // 报警后需降到 670 以下才恢复
-                Severity = AlarmSeverity.Warning,
-                Title = "灌装液位偏高",
-                MessageTemplate = "灌装液位 {Value} mL 达到警戒线",
-                Source = "灌装产线 S7-1500",
-                CooldownSeconds = 60  // 60秒冷却，防止重复报警
-            },
-            // 高高限报警 — 灌装液位达到或超过 800 mL（溢出风险）
-            new AlarmDefinition
-            {
-                RuleId = "alm-fill-highhigh",
-                AlarmCode = "FILL_LEVEL_HIGH_HIGH",
-                TagId = "tag-filling-actuallevel",
-                TagName = "Filling.ActualLevel",
-                AlarmType = AlarmType.HighHigh,
-                ConditionExpression = "Value >= 800",
-                Hysteresis = 30.0,  // 报警后需降到 770 以下才恢复
-                Severity = AlarmSeverity.Critical,
-                Title = "灌装液位超高（溢出风险）",
-                MessageTemplate = "灌装液位 {Value} mL 超过高高限，有溢出风险！",
-                Source = "灌装产线 S7-1500",
-                CooldownSeconds = 60  // 60秒冷却，防止重复报警
-            },
-            // 高限报警 — 传送速度超过 25 m/min
-            new AlarmDefinition
-            {
-                RuleId = "alm-speed-high",
-                AlarmCode = "CONVEYOR_SPEED_HIGH",
-                TagId = "tag-conveyor-actualspeed",
-                TagName = "Conveyor.ActualSpeed",
-                AlarmType = AlarmType.High,
-                ConditionExpression = "Value > 25",
-                Hysteresis = 2.0,  // >25 报警, <23 恢复
-                Severity = AlarmSeverity.Warning,
-                Title = "传送速度偏高",
-                MessageTemplate = "传送速度 {Value} m/min 超过 25 m/min",
-                Source = "灌装产线 S7-1500",
-                CooldownSeconds = 15
-            },
-            // 低限报警 — 传送速度低于 5 m/min
-            new AlarmDefinition
-            {
-                RuleId = "alm-speed-low",
-                AlarmCode = "CONVEYOR_SPEED_LOW",
-                TagId = "tag-conveyor-actualspeed",
-                TagName = "Conveyor.ActualSpeed",
-                AlarmType = AlarmType.Low,
-                ConditionExpression = "Value < 5",
-                Hysteresis = 2.0,  // <5 报警, >7 恢复
-                Severity = AlarmSeverity.Warning,
-                Title = "传送速度偏低",
-                MessageTemplate = "传送速度 {Value} m/min 低于 5 m/min",
-                Source = "灌装产线 S7-1500",
-                CooldownSeconds = 15
-            },
-            // 布尔报警 — 急停按钮触发
-            new AlarmDefinition
-            {
-                RuleId = "alm-estop",
-                AlarmCode = "LINE_ESTOP_ACTIVE",
-                TagId = "tag-line-estop",
-                TagName = "Line.EStop",
-                AlarmType = AlarmType.Bool,
-                ConditionExpression = "Value == true",
-                Severity = AlarmSeverity.Critical,
-                Title = "急停按钮已触发",
-                MessageTemplate = "产线急停按钮已按下，请立即检查！",
-                Source = "灌装产线 S7-1500",
-                CooldownSeconds = 5
-            }
+        // ═══ 报警规则模板（按 TagName 匹配，与设备/驱动无关）═══
+        static AlarmDefinition MakeRule(string tagId, string tagName, string ruleId, string code,
+            AlarmType type, string condition, double? hysteresis,
+            AlarmSeverity severity, string title, string template, string source, int cooldown) => new()
+        {
+            RuleId = ruleId, AlarmCode = code, TagId = tagId, TagName = tagName,
+            AlarmType = type, ConditionExpression = condition,
+            Hysteresis = hysteresis ?? 0.0, Severity = severity,
+            Title = title, MessageTemplate = template, Source = source,
+            CooldownSeconds = cooldown
         };
 
-        alarmManager.RegisterRules(rules);
-        Log.Information("已注册 {Count} 条测试报警规则", rules.Length);
+        var ruleTemplates = new[]
+        {
+            ("Line.EStop",              "estop",       "LINE_ESTOP_ACTIVE",       AlarmType.Bool,   "Value == true",   (double?)null, AlarmSeverity.Critical, "急停按钮已触发",     "产线急停按钮已按下，请立即检查！", 5),
+            ("Line.AlarmActive",         "alarm-active","LINE_ALARM_ACTIVE",        AlarmType.Bool,   "Value == true",   (double?)null, AlarmSeverity.Critical, "产线设备报警",      "产线异常，请检查！",                5),
+            ("Filling.ActualLevel",      "fill-high",   "FILL_LEVEL_HIGH",          AlarmType.High,   "Value >= 700",    30.0,         AlarmSeverity.Warning,  "灌装液位偏高",      "灌装液位 {Value} mL 达到警戒线", 60),
+            ("Filling.ActualLevel",      "fill-highhigh","FILL_LEVEL_HIGH_HIGH",    AlarmType.HighHigh,"Value >= 800",    30.0,         AlarmSeverity.Critical,  "灌装液位超高",      "灌装液位 {Value} mL 超过高高限，有溢出风险！",60),
+            ("Conveyor.ActualSpeed",     "speed-high",  "CONVEYOR_SPEED_HIGH",      AlarmType.High,   "Value > 25",      2.0,          AlarmSeverity.Warning,  "传送速度偏高",      "传送速度 {Value} m/min 超过 25 m/min",15),
+            ("Conveyor.ActualSpeed",     "speed-low",   "CONVEYOR_SPEED_LOW",       AlarmType.Low,    "Value < 5",       2.0,          AlarmSeverity.Warning,  "传送速度偏低",      "传送速度 {Value} m/min 低于 5 m/min",15),
+        };
+
+        foreach (var device in devices)
+        {
+            foreach (var (tagName, ruleId, code, type, cond, hys, sev, title, tmpl, cd) in ruleTemplates)
+            {
+                var tag = device.Tags.FirstOrDefault(t => t.Name == tagName);
+                if (tag == null) continue;
+                var safe = string.IsNullOrEmpty(device.Name) ? "unknown" : new string(device.Name.TakeWhile(char.IsLetterOrDigit).ToArray());
+                allRules.Add(MakeRule(tag.Id, tag.Name, $"alm-{safe}-{ruleId}", code, type, cond, hys, sev, title, tmpl, device.Name ?? "未知设备", cd));
+            }
+        }
+
+        if (allRules.Count > 0)
+        {
+            alarmManager.RegisterRules([.. allRules]);
+            Log.Information("已动态注册 {Count} 条报警规则（覆盖 {DeviceCount} 台设备）", allRules.Count, devices.Count);
+        }
+        else
+        {
+            Log.Warning("未加载任何设备，跳过报警规则注册");
+        }
     }
 
     /// <summary>
     /// 注册趋势跟踪 Tag，并从新报警定义快照中生成趋势报警线。
     /// </summary>
-    private void RegisterTrendTags(TrendEngine trendEngine, IAlarmDefinitionService definitionService)
+    private void RegisterTrendTags(TrendEngine trendEngine, IAlarmDefinitionService definitionService, AcquisitionHost host)
     {
-        // 为所有模拟量读取 Tag 注册趋势跟踪
-        var analogTags = new[] { "tag-filling-actuallevel", "tag-conveyor-actualspeed" };
-        var tagNames = new Dictionary<string, string>
+        // 从实际加载的设备中动态查找模拟量 Tag（Float32/Int32），不再硬编码 S7 的 TagId
+        var devices = host.GetDevices();
+        var analogTags = new List<(string TagId, string TagName)>();
+        foreach (var device in devices)
         {
-            ["tag-filling-actuallevel"] = "Filling.ActualLevel",
-            ["tag-conveyor-actualspeed"] = "Conveyor.ActualSpeed"
-        };
+            foreach (var tag in device.Tags.Where(t => t.DataType is TagDataType.Float32 or TagDataType.Int32 or TagDataType.Float64 or TagDataType.Int64))
+            {
+                analogTags.Add((tag.Id, tag.Name));
+            }
+        }
+
+        // 如果没找到任何模拟量，回退到已知 TagId（兼容旧配置）
+        if (analogTags.Count == 0)
+        {
+            analogTags = [("tag-filling-actuallevel", "Filling.ActualLevel"), ("tag-conveyor-actualspeed", "Conveyor.ActualSpeed")];
+        }
+
         var tagUnits = new Dictionary<string, string>
         {
-            ["tag-filling-actuallevel"] = "mL",
-            ["tag-conveyor-actualspeed"] = "m/min"
+            ["Filling.ActualLevel"] = "mL", ["Conveyor.ActualSpeed"] = "m/min",
+            ["Line.TotalCount"] = "个"
         };
         var tagColors = new Dictionary<string, string>
         {
-            ["tag-filling-actuallevel"] = "#3B82F6",
-            ["tag-conveyor-actualspeed"] = "#10B981"
+            ["Filling.ActualLevel"] = "#3B82F6", ["Conveyor.ActualSpeed"] = "#10B981",
+            ["Line.TotalCount"] = "#F59E0B"
         };
 
-        foreach (var tagId in analogTags)
+        foreach (var (tagId, tagName) in analogTags)
         {
             var template = new TrendTemplate
             {
                 TemplateId = $"trend-{tagId}",
-                Name = tagNames.GetValueOrDefault(tagId, tagId),
-                Unit = tagUnits.GetValueOrDefault(tagId, ""),
+                Name = tagName,
+                Unit = tagUnits.GetValueOrDefault(tagName, ""),
                 YMin = 0,
-                YMax = tagId == "tag-filling-actuallevel" ? 1000 : 50,
+                YMax = tagName.Contains("Level", StringComparison.OrdinalIgnoreCase) ? 1000 :
+                       tagName.Contains("Speed", StringComparison.OrdinalIgnoreCase) ? 50 : 100,
                 BufferCapacity = 3600,
                 WindowSeconds = 300,
                 LineColor = tagColors.GetValueOrDefault(tagId, "#3B82F6"),
@@ -528,13 +496,13 @@ public partial class App : PrismApplication
         // 从新链路已加载的报警定义添加报警线
         var rules = definitionService.Current.Definitions;
         trendEngine.AddAlarmLinesFromRules(rules);
-        Log.Information("已注册 {Count} 个趋势 Tag，{LineCount} 条报警线", analogTags.Length, trendEngine.AlarmLines.Count);
+        Log.Information("已注册 {Count} 个趋势 Tag，{LineCount} 条报警线", analogTags.Count, trendEngine.AlarmLines.Count);
     }
 
     /// <summary>
     /// 从配置目录中所有 JSON 文件加载设备并启动采集。
     /// </summary>
-    private async Task LoadAndStartDevicesAsync(AcquisitionHost host, HistoryWriter writer)
+    private async Task LoadAndStartDevicesAsync(AcquisitionHost host, HistoryWriter writer, AlarmManager alarmManager, TrendEngine trendEngine)
     {
         try
         {
@@ -542,55 +510,90 @@ public partial class App : PrismApplication
             if (!Directory.Exists(configDir))
             {
                 Log.Warning("配置目录 {Path} 不存在，使用 Mock 设备", configDir);
-                StartMockDevices(host, writer);
-                return;
+                await StartMockDevices(host, writer);
             }
-
-            var jsonFiles = Directory.GetFiles(configDir, "*.json");
-            if (jsonFiles.Length == 0)
+            else
             {
-                Log.Warning("配置目录 {Path} 中无 JSON 文件，使用 Mock 设备", configDir);
-                StartMockDevices(host, writer);
-                return;
-            }
-
-            int startedCount = 0;
-            foreach (var filePath in jsonFiles)
-            {
-                var deviceConfigs = await DeviceConfigurationLoader.LoadFromFileAsync(filePath);
-                foreach (var config in deviceConfigs)
+                var jsonFiles = Directory.GetFiles(configDir, "*.json");
+                if (jsonFiles.Length == 0)
                 {
-                    var readableTags = config.Tags.ToList();
-                    writer.RegisterTags(readableTags);
-
-                    try
-                    {
-                        await host.StartDeviceAsync(config);
-                        Log.Information("设备 {Name} [{DriverType}] 采集已启动 (来自 {File})",
-                            config.Name, config.DriverType, Path.GetFileName(filePath));
-                        startedCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex, "设备 {Name} [{DriverType}] 启动失败: {Message}",
-                            config.Name, config.DriverType, ex.Message);
-                    }
+                    Log.Warning("配置目录 {Path} 中无 JSON 文件，使用 Mock 设备", configDir);
+                    await StartMockDevices(host, writer);
                 }
-            }
+                else
+                {
 
-            if (startedCount == 0)
-            {
-                Log.Warning("无设备成功启动，使用 Mock 设备");
-                StartMockDevices(host, writer);
-            }
+                    int startedCount = 0;
+                    foreach (var filePath in jsonFiles)
+                    {
+                        var deviceConfigs = await DeviceConfigurationLoader.LoadFromFileAsync(filePath);
+                        foreach (var config in deviceConfigs)
+                        {
+                            var readableTags = config.Tags.ToList();
+                            writer.RegisterTags(readableTags);
 
-            // 启动目录监听（监控所有 JSON 文件变更）
-            StartConfigurationWatcher(configDir, host, writer);
+                            try
+                            {
+                                await host.StartDeviceAsync(config);
+                                Log.Information("设备 {Name} [{DriverType}] 采集已启动 (来自 {File})",
+                                    config.Name, config.DriverType, Path.GetFileName(filePath));
+                                startedCount++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error(ex, "设备 {Name} [{DriverType}] 启动失败: {Message}",
+                                    config.Name, config.DriverType, ex.Message);
+                            }
+                        }
+                    }
+
+                    if (startedCount == 0)
+                    {
+                        Log.Warning("无设备成功启动，使用 Mock 设备");
+                        await StartMockDevices(host, writer);
+                    }
+
+                    // 启动目录监听（监控所有 JSON 文件变更）
+                    StartConfigurationWatcher(configDir, host, writer);
+                }
+
+                // 将实时设备树镜像到资源树，并刷新快照（报警页下拉框随即反映真实设备）
+                await SyncResourceTreeAsync(host);
+
+                // ── 设备就绪后动态注册报警规则（按实际设备的 TagId 生成）──
+                RegisterDynamicAlarmRules(alarmManager, host);
+
+                // ── 注册趋势跟踪 Tag（从实际设备中查找模拟量） ──
+                RegisterTrendTags(trendEngine, Container.Resolve<IAlarmDefinitionService>(), host);
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "加载配置文件失败，使用 Mock 设备");
-            StartMockDevices(host, writer);
+            await StartMockDevices(host, writer);
+            await SyncResourceTreeAsync(host);
+            // Mock 设备也需注册报警规则和趋势 Tag
+            RegisterDynamicAlarmRules(alarmManager, host);
+            RegisterTrendTags(trendEngine, Container.Resolve<IAlarmDefinitionService>(), host);
+        }
+    }
+
+    /// <summary>
+    /// 将 AcquisitionHost 中当前运行的所有设备同步到资源树（resource_nodes），
+    /// 并原子刷新内存快照，使报警规则页等设备/数据点下拉框与现场保持一致。
+    /// 失败仅记录日志，不影响采集主流程。
+    /// </summary>
+    private async Task SyncResourceTreeAsync(AcquisitionHost host)
+    {
+        try
+        {
+            var synchronizer = Container.Resolve<ResourceTreeSynchronizer>();
+            await synchronizer.SyncFromDevicesAsync(host.GetDevices());
+            Log.Information("资源树已与采集宿主设备同步，共 {Count} 台设备", host.GetDevices().Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "资源树同步失败（不影响采集）");
         }
     }
 
@@ -613,7 +616,7 @@ public partial class App : PrismApplication
     /// <summary>
     /// 回退方案：创建 2 台模拟设备用于 UI 调试。
     /// </summary>
-    private void StartMockDevices(AcquisitionHost host, HistoryWriter writer)
+    private async Task StartMockDevices(AcquisitionHost host, HistoryWriter writer)
     {
         var device1 = new DeviceConfig
         {
@@ -653,8 +656,8 @@ public partial class App : PrismApplication
         writer.RegisterTags(device1.Tags);
         writer.RegisterTags(device2.Tags);
 
-        _ = host.StartDeviceAsync(device1);
-        _ = host.StartDeviceAsync(device2);
+        await host.StartDeviceAsync(device1);
+        await host.StartDeviceAsync(device2);
     }
 
 
@@ -778,6 +781,9 @@ public partial class App : PrismApplication
             // 通知 UI 刷新设备列表
             var eventAggregator = Container.Resolve<IEventAggregator>();
             eventAggregator.GetEvent<IndustrialDAQ.UI.Events.ConfigurationReloadedEvent>().Publish();
+
+            // 设备已变更，重新将实时设备树镜像到资源树
+            await SyncResourceTreeAsync(host);
         }
         catch (Exception ex)
         {

@@ -304,6 +304,14 @@ public class AlarmRuleConfigViewModel : BindableBase, INavigationAware
             .ObservesProperty(() => ConditionExpression);
         DeleteCommand = new DelegateCommand(OnDeleteExecute, () => IsEditMode).ObservesProperty(() => IsEditMode);
         ReloadEngineCommand = new DelegateCommand(OnReloadEngineExecute);
+
+        // 设备树热重载（运行时增删设备）后，自动刷新资源路径下拉框
+        _eventAggregator.GetEvent<ConfigurationReloadedEvent>().Subscribe(OnConfigurationReloaded);
+    }
+
+    private void OnConfigurationReloaded()
+    {
+        _ = LoadResourceTreeAsync();
     }
 
     public async void OnNavigatedTo(NavigationContext navigationContext)
